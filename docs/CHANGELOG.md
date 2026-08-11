@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - [修复] 修复生成后端冒烟测试仍在运行时 Web 设置页因通用 30 秒请求上限提前误报超时的问题。
 - [修复] 修复设置页 Agent 渠道诊断将 OpenCode CLI、Claude Code CLI 错误显示为 Codex CLI 的问题。
+- [修复] 修复本地 CLI 生成后端未继承标准代理环境变量，导致 Codex CLI 等后端在代理网络中执行超时的问题。
 
 ## [3.30.0] - 2026-08-09
 
