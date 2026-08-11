@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
 
+- [修复] 修复生成后端冒烟测试仍在运行时 Web 设置页因通用 30 秒请求上限提前误报超时的问题。
+- [修复] 修复设置页 Agent 渠道诊断将 OpenCode CLI、Claude Code CLI 错误显示为 Codex CLI 的问题。
+
 ## [3.30.0] - 2026-08-09
 
 ### 发布亮点

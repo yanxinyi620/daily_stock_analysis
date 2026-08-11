@@ -29,6 +29,8 @@ import type {
   ValidateSystemConfigResponse,
 } from '../types/systemConfig';
 
+const GENERATION_BACKEND_SMOKE_TIMEOUT_MS = 300_000;
+
 export class SystemConfigValidationError extends Error {
   issues: SystemConfigValidationErrorResponse['issues'];
   parsedError: ParsedApiError;
@@ -225,6 +227,7 @@ export const systemConfigApi = {
     const response = await apiClient.post<Record<string, unknown>>(
       '/api/v1/system/config/generation-backends/smoke-test',
       toSnakeGenerationBackendSmokePayload(payload),
+      { timeout: GENERATION_BACKEND_SMOKE_TIMEOUT_MS },
     );
     return toCamelCase<TestGenerationBackendResponse>(response.data);
   },

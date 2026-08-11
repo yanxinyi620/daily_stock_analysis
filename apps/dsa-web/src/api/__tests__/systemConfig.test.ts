@@ -304,6 +304,7 @@ describe('systemConfigApi', () => {
         mask_token: '******',
         timeout_seconds: 9,
       },
+      { timeout: 300_000 },
     );
     expect(result.success).toBe(true);
     expect(result.status.healthStatus).toBe('passed');
