@@ -640,12 +640,15 @@ def trigger_composite_analysis(
     service = CompositeAnalysisService(config)
 
     def run_task(task_id: str) -> Dict[str, Any]:
-        return service.run(
-            snapshot,
-            task_id=task_id,
-            progress_callback=lambda **state: queue.update_composite_state(task_id, **state),
-            market_lock_token=lock_token,
-        )
+        try:
+            return service.run(
+                snapshot,
+                task_id=task_id,
+                progress_callback=lambda **state: queue.update_composite_state(task_id, **state),
+                market_lock_token=lock_token,
+            )
+        finally:
+            _release_market_review_lock(lock_token)
 
     try:
         task = queue.submit_composite_task(

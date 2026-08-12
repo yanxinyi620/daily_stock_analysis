@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Sequence
@@ -11,11 +12,11 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 from src.analyzer import AnalysisResult
 from src.config import Config
 from src.core.market_review import run_market_review
-from src.core.market_review_lock import release_market_review_lock
 from src.core.market_review_runtime import build_market_review_runtime
 from src.core.pipeline import StockAnalysisPipeline
 from src.enums import ReportType
 from src.storage import DatabaseManager
+from src.services.run_diagnostics import sanitize_diagnostic_text
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,7 @@ class CompositeAnalysisService:
             trace_id=task_id,
             query_source="api_composite",
             analysis_skills=list(snapshot.skills),
+            daily_market_context_allow_generate=False,
         )
         failures: Dict[str, str] = {}
 
@@ -150,9 +152,6 @@ class CompositeAnalysisService:
             market_status = "failed"
             market_report = f"> 大盘复盘生成失败：{self._safe_error(exc)}"
             logger.warning("组合任务大盘复盘失败: %s", exc)
-        finally:
-            release_market_review_lock(market_lock_token)
-
         progress_callback(
             phase="report",
             progress=82,
@@ -239,7 +238,13 @@ class CompositeAnalysisService:
     @staticmethod
     def _safe_error(error: Any) -> str:
         text = str(error or "未知原因").replace("\n", " ").strip()
-        return text[:160]
+        sanitized = sanitize_diagnostic_text(text) or "未知原因"
+        sanitized = re.sub(
+            r"(?i)\b(api[ _-]?key|token|secret|password)\s*[:=]\s*[^\s,;]+",
+            r"\1=<redacted>",
+            sanitized,
+        )
+        return sanitized[:160]
 
     @staticmethod
     def _average_score(results: Sequence[AnalysisResult]) -> int:

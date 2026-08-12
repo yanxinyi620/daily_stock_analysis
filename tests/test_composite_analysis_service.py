@@ -63,10 +63,7 @@ def _service(*, results, failures=None, notify_result=True, market_error=False):
     return service, pipeline, database
 
 
-def test_composite_success_persists_then_sends_once(monkeypatch):
-    monkeypatch.setattr(
-        "src.services.composite_analysis_service.release_market_review_lock", lambda _token: None
-    )
+def test_composite_success_persists_then_sends_once():
     service, pipeline, database = _service(results=[_result("600519"), _result("000858")])
     events = []
 
@@ -84,10 +81,7 @@ def test_composite_success_persists_then_sends_once(monkeypatch):
     assert events[-1]["phase"] == "completed"
 
 
-def test_stock_and_market_failures_still_create_partial_report(monkeypatch):
-    monkeypatch.setattr(
-        "src.services.composite_analysis_service.release_market_review_lock", lambda _token: None
-    )
+def test_stock_and_market_failures_still_create_partial_report():
     service, pipeline, database = _service(
         results=[_result("600519")], failures={"000858": "API key=secret\n失败"}, market_error=True
     )
@@ -104,14 +98,12 @@ def test_stock_and_market_failures_still_create_partial_report(monkeypatch):
     pipeline.notifier.send.assert_not_called()
     report = pipeline.notifier.save_report_to_file.call_args.args[0]
     assert "000858" in report
+    assert "secret" not in report
     assert "大盘复盘生成失败" in report
     database.save_analysis_history.assert_called_once()
 
 
-def test_notification_failure_does_not_remove_saved_history(monkeypatch):
-    monkeypatch.setattr(
-        "src.services.composite_analysis_service.release_market_review_lock", lambda _token: None
-    )
+def test_notification_failure_does_not_remove_saved_history():
     service, _pipeline, database = _service(results=[_result("600519")], notify_result=False)
 
     result = service.run(

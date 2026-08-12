@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] 修复生成后端冒烟测试仍在运行时 Web 设置页因通用 30 秒请求上限提前误报超时的问题。
 - [修复] 修复设置页 Agent 渠道诊断将 OpenCode CLI、Claude Code CLI 错误显示为 Codex CLI 的问题。
 - [修复] 修复本地 CLI 生成后端未继承标准代理环境变量，导致 Codex CLI 等后端在代理网络中执行超时的问题。
+- [新功能] Web 首页新增“综合分析”，一次执行全部自选股与大盘复盘，保存一份综合报告，并按首页“推送通知”开关决定是否发送合并通知；部分失败时继续完成其余项目并列出失败项。
 
 ## [3.30.0] - 2026-08-09
 
