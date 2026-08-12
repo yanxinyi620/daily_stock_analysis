@@ -32,6 +32,7 @@ from src.services.run_diagnostics import (
     activate_run_diagnostic_context,
     get_current_diagnostic_context,
     reset_run_diagnostic_context,
+    sanitize_diagnostic_text,
 )
 from src.utils.analysis_metadata import SELECTION_SOURCES
 from src.services.stock_code_utils import resolve_index_stock_code_for_analysis
@@ -638,15 +639,28 @@ class AnalysisTaskQueue:
         task_id: str,
         run_task: Callable[[str], Optional[Dict[str, Any]]],
     ) -> Optional[Dict[str, Any]]:
+        cancelled_before_start = False
         with self._data_lock:
             task = self._tasks.get(task_id)
             if task is None:
                 return None
-            task.status = TaskStatus.PROCESSING
-            task.started_at = datetime.now()
-            task.progress = 1
-            task.message = "组合分析正在执行"
-            snapshot = task.copy()
+            if task.status is TaskStatus.CANCEL_REQUESTED:
+                task.status = TaskStatus.CANCELLED
+                task.completed_at = datetime.now()
+                task.progress = 100
+                task.message = "组合分析已取消"
+                self._release_composite_reservations_locked(task)
+                snapshot = task.copy()
+                cancelled_before_start = True
+            else:
+                task.status = TaskStatus.PROCESSING
+                task.started_at = datetime.now()
+                task.progress = 1
+                task.message = "组合分析正在执行"
+                snapshot = task.copy()
+        if cancelled_before_start:
+            self._broadcast_event("task_completed", snapshot.to_dict())
+            return {"status": "cancelled"}
         self._broadcast_event("task_started", snapshot.to_dict())
 
         try:
@@ -656,21 +670,25 @@ class AnalysisTaskQueue:
                 task = self._tasks.get(task_id)
                 if task is None:
                     return result
-                task.status = (
-                    TaskStatus.PARTIAL
-                    if terminal_status == TaskStatus.PARTIAL.value
-                    else TaskStatus.COMPLETED
-                )
+                if terminal_status == TaskStatus.CANCELLED.value:
+                    task.status = TaskStatus.CANCELLED
+                elif terminal_status == TaskStatus.PARTIAL.value:
+                    task.status = TaskStatus.PARTIAL
+                else:
+                    task.status = TaskStatus.COMPLETED
                 task.progress = 100
                 task.completed_at = datetime.now()
                 task.result = result
-                task.message = "组合分析部分完成" if task.status is TaskStatus.PARTIAL else "组合分析完成"
+                task.message = {
+                    TaskStatus.PARTIAL: "组合分析部分完成",
+                    TaskStatus.CANCELLED: "组合分析已取消",
+                }.get(task.status, "组合分析完成")
                 self._release_composite_reservations_locked(task)
                 snapshot = task.copy()
             self._broadcast_event("task_completed", snapshot.to_dict())
             return result
         except Exception as exc:
-            error_text = str(exc)[:200]
+            error_text = (sanitize_diagnostic_text(exc) or "组合分析执行失败")[:200]
             with self._data_lock:
                 task = self._tasks.get(task_id)
                 if task is None:
@@ -711,6 +729,28 @@ class AnalysisTaskQueue:
             snapshot = task.copy()
         self._broadcast_event("task_progress", snapshot.to_dict())
         return snapshot
+
+    def request_composite_cancel(self, task_id: str) -> Optional[TaskInfo]:
+        """Request cooperative cancellation before report persistence/notification."""
+        with self._data_lock:
+            task = self._tasks.get(task_id)
+            if task is None or task.task_type != "composite_analysis":
+                return None
+            if task.status not in (TaskStatus.PENDING, TaskStatus.PROCESSING):
+                return task.copy()
+            task.status = TaskStatus.CANCEL_REQUESTED
+            task.message = "正在取消综合分析"
+            composite = copy.deepcopy(task.composite or {})
+            composite["phase"] = "cancel_requested"
+            task.composite = composite
+            snapshot = task.copy()
+        self._broadcast_event("task_progress", snapshot.to_dict())
+        return snapshot
+
+    def is_composite_cancel_requested(self, task_id: str) -> bool:
+        with self._data_lock:
+            task = self._tasks.get(task_id)
+            return bool(task and task.status is TaskStatus.CANCEL_REQUESTED)
 
     def _rollback_submitted_tasks_locked(self, task_ids: List[str]) -> None:
         """回滚当前批次已创建但尚未稳定返回给调用方的任务。"""

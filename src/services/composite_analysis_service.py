@@ -70,6 +70,7 @@ class CompositeAnalysisService:
         task_id: str,
         progress_callback: Callable[..., Any],
         market_lock_token: Any = None,
+        cancel_requested: Callable[[], bool] = lambda: False,
     ) -> Dict[str, Any]:
         scoped_config = copy.copy(self.config)
         scoped_config.report_type = snapshot.report_type
@@ -121,6 +122,9 @@ class CompositeAnalysisService:
             if code not in successful_codes and code not in failures:
                 failures[code] = "分析未返回有效结果"
 
+        if cancel_requested():
+            return {"status": "cancelled", "stock_completed": len(results), "stock_failed": len(failures)}
+
         market_report = ""
         market_status = "completed"
         progress_callback(
@@ -158,6 +162,10 @@ class CompositeAnalysisService:
             patch={"market_review": {"status": market_status}, "report": {"status": "processing"}},
             message="正在生成综合报告",
         )
+        if cancel_requested():
+            return {"status": "cancelled", "stock_completed": len(results), "stock_failed": len(failures)}
+        if not results and market_status == "failed":
+            raise RuntimeError("个股分析与大盘复盘均未生成有效内容")
         stock_report = (
             pipeline.notifier.generate_aggregate_report(
                 results, ReportType.from_str(snapshot.report_type)

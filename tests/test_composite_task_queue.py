@@ -64,3 +64,17 @@ def test_submit_composite_task_conflict_creates_nothing(queue) -> None:
     assert queue._active_composite_task_id is None
     assert list(queue._tasks) == []
     assert _dedupe_stock_code_key("600519") not in queue._analyzing_stocks
+
+
+def test_composite_cancel_request_is_visible_to_worker(queue) -> None:
+    task = queue.submit_composite_task(
+        lambda _task_id: {"status": "cancelled"},
+        stock_codes=["600519"],
+        notify=False,
+    )
+
+    cancelled = queue.request_composite_cancel(task.task_id)
+
+    assert cancelled is not None
+    assert cancelled.status.value == "cancel_requested"
+    assert queue.is_composite_cancel_requested(task.task_id) is True

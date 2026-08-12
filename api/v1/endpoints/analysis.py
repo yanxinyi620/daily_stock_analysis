@@ -646,6 +646,7 @@ def trigger_composite_analysis(
                 task_id=task_id,
                 progress_callback=lambda **state: queue.update_composite_state(task_id, **state),
                 market_lock_token=lock_token,
+                cancel_requested=lambda: queue.is_composite_cancel_requested(task_id),
             )
         finally:
             _release_market_review_lock(lock_token)
@@ -684,6 +685,18 @@ def trigger_composite_analysis(
         notify=request.notify,
         region=effective_region,
     )
+
+
+@router.post("/composite/{task_id}/cancel", summary="取消综合分析")
+def cancel_composite_analysis(task_id: str) -> Dict[str, Any]:
+    task = get_task_queue().request_composite_cancel(task_id)
+    if task is None:
+        raise api_error(404, "task_not_found", "综合分析任务不存在")
+    return {
+        "task_id": task.task_id,
+        "status": task.status.value,
+        "message": task.message,
+    }
 
 
 # ============================================================

@@ -60,7 +60,7 @@ export interface CompositeTaskAccepted {
 }
 
 export interface CompositeTaskState {
-  phase: 'pending' | 'stocks' | 'market_review' | 'report' | 'notification' | 'completed';
+  phase: 'pending' | 'stocks' | 'market_review' | 'report' | 'notification' | 'cancel_requested' | 'completed';
   stockCodes: string[];
   stockSummary: { total: number; completed: number; failed: number; currentStockCode?: string | null };
   marketReview: { status: string };

@@ -116,7 +116,9 @@ const toTaskInfo = (data: Record<string, unknown>): TaskInfo => {
     skills: Array.isArray(data.skills) ? data.skills.map(String) : undefined,
     taskType: data.task_type as string | undefined,
     parentTaskId: data.parent_task_id as string | undefined,
-    composite: data.composite as TaskInfo['composite'],
+    composite: data.composite
+      ? toCamelCase<TaskInfo['composite']>(data.composite)
+      : undefined,
   };
 
   if (typeof data.trace_id === 'string' && data.trace_id.trim()) {

@@ -115,3 +115,36 @@ def test_notification_failure_does_not_remove_saved_history():
     assert result["status"] == "partial"
     assert result["notification_status"] == "failed"
     database.save_analysis_history.assert_called_once()
+
+
+def test_no_valid_content_fails_without_history():
+    service, pipeline, database = _service(results=[], failures={"600519": "模型失败"}, market_error=True)
+
+    try:
+        service.run(
+            CompositeAnalysisRequestSnapshot(("600519",), notify=True),
+            task_id="abc123456",
+            progress_callback=lambda **_event: None,
+        )
+    except RuntimeError as exc:
+        assert "未生成有效内容" in str(exc)
+    else:
+        raise AssertionError("expected no-valid-content failure")
+
+    database.save_analysis_history.assert_not_called()
+    pipeline.notifier.send.assert_not_called()
+
+
+def test_cancellation_after_stock_stage_skips_market_report_and_notification():
+    service, pipeline, database = _service(results=[_result("600519")])
+
+    result = service.run(
+        CompositeAnalysisRequestSnapshot(("600519",), notify=True),
+        task_id="abc123456",
+        progress_callback=lambda **_event: None,
+        cancel_requested=lambda: True,
+    )
+
+    assert result["status"] == "cancelled"
+    database.save_analysis_history.assert_not_called()
+    pipeline.notifier.send.assert_not_called()
