@@ -3119,6 +3119,9 @@ class StockAnalysisPipeline:
         send_notification: bool = True,
         merge_notification: bool = False,
         current_time: Optional[datetime] = None,
+        batch_item_callback: Optional[
+            Callable[[str, str, Optional[AnalysisResult], Optional[str], int, int], None]
+        ] = None,
     ) -> List[AnalysisResult]:
         """
         运行完整的分析流程
@@ -3219,10 +3222,15 @@ class StockAnalysisPipeline:
             # 收集结果
             for idx, future in enumerate(as_completed(future_to_code)):
                 code = future_to_code[future]
+                callback_status = "failed"
+                callback_result: Optional[AnalysisResult] = None
+                callback_error: Optional[str] = None
                 try:
                     result = future.result()
                     if result and result.success:
                         results.append(result)
+                        callback_status = "completed"
+                        callback_result = result
                         if single_stock_notify and send_notification and not dry_run:
                             self._send_single_stock_notification(
                                 result,
@@ -3230,6 +3238,7 @@ class StockAnalysisPipeline:
                                 fallback_code=code,
                             )
                     elif result and not result.success:
+                        callback_error = result.error_message or "分析未成功"
                         logger.warning(
                             f"[{code}] 分析结果标记为失败，不计入汇总: "
                             f"{result.error_message or '未知原因'}"
@@ -3245,7 +3254,21 @@ class StockAnalysisPipeline:
                         time.sleep(analysis_delay)
 
                 except Exception as e:
+                    callback_error = str(e)
                     logger.error(f"[{code}] 任务执行失败: {e}")
+                finally:
+                    if batch_item_callback is not None:
+                        try:
+                            batch_item_callback(
+                                code,
+                                callback_status,
+                                callback_result,
+                                callback_error,
+                                idx + 1,
+                                len(stock_codes),
+                            )
+                        except Exception as callback_exc:
+                            logger.warning("[%s] 批量进度回调失败（忽略）: %s", code, callback_exc)
         
         # 统计
         elapsed_time = time.time() - start_time

@@ -53,6 +53,27 @@ class TestPipelinePrefetchBehavior(unittest.TestCase):
             ["000001"], use_bulk=False
         )
 
+    def test_run_reports_each_settled_batch_item_without_changing_results(self):
+        success = SimpleNamespace(code="600519", success=True)
+        failure = SimpleNamespace(code="000858", success=False, error_message="模型失败")
+        pipeline = self._build_pipeline(process_result=None)
+        pipeline.process_single_stock = MagicMock(side_effect=[success, failure])
+        events = []
+
+        results = pipeline.run(
+            stock_codes=["600519", "000858"],
+            dry_run=False,
+            send_notification=False,
+            batch_item_callback=lambda *args: events.append(args),
+        )
+
+        self.assertEqual(results, [success])
+        self.assertEqual(len(events), 2)
+        self.assertEqual({event[0] for event in events}, {"600519", "000858"})
+        self.assertEqual({event[1] for event in events}, {"completed", "failed"})
+        self.assertEqual({event[4] for event in events}, {1, 2})
+        self.assertTrue(all(event[5] == 2 for event in events))
+
     def test_run_dry_run_counts_existing_data_by_effective_trading_date(self):
         pipeline = self._build_pipeline(process_result=None)
         pipeline._resolve_resume_target_date = MagicMock(
