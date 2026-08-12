@@ -56,3 +56,44 @@ describe('analysisApi.triggerMarketReview', () => {
     );
   });
 });
+
+describe('analysisApi.triggerCompositeAnalysis', () => {
+  beforeEach(() => {
+    post.mockReset();
+    post.mockResolvedValue({
+      status: 202,
+      data: {
+        task_id: 'composite-1',
+        status: 'pending',
+        message: 'accepted',
+        stock_codes: ['600519', '000858'],
+        notify: false,
+        region: 'cn',
+      },
+    });
+  });
+
+  it('freezes the watchlist, notification and strategy options', async () => {
+    const result = await analysisApi.triggerCompositeAnalysis({
+      stockCodes: ['600519', '000858'],
+      notify: false,
+      reportLanguage: 'zh',
+      skills: ['bull'],
+      regions: ['cn'],
+    });
+
+    expect(post).toHaveBeenCalledWith(
+      '/api/v1/analysis/composite',
+      {
+        stock_codes: ['600519', '000858'],
+        notify: false,
+        report_type: 'full',
+        report_language: 'zh',
+        skills: ['bull'],
+        region: 'cn',
+      },
+      expect.any(Object),
+    );
+    expect(result.taskId).toBe('composite-1');
+  });
+});

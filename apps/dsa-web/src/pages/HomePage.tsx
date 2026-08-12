@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BarChart3, Check, SlidersHorizontal, X } from 'lucide-react';
+import { BarChart3, Check, SlidersHorizontal, Sparkles, X } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getParsedApiError, type ParsedApiError } from '../api/error';
 import { analysisApi, DuplicateTaskError } from '../api/analysis';
@@ -14,6 +14,7 @@ import { StockHistoryTrendDrawer } from '../components/history';
 import { ReportMarkdownDrawer } from '../components/report/ReportMarkdownDrawer';
 import { MarketReviewReportView } from '../components/report/MarketReviewReportView';
 import { MarketReviewRegionSelector } from '../components/market-review/MarketReviewRegionSelector';
+import { CompositeTaskCard } from '../components/composite-analysis/CompositeTaskCard';
 import { ReportSummary } from '../components/report/ReportSummary';
 import { RunFlowPanel } from '../components/run-flow';
 import { TaskPanel } from '../components/tasks';
@@ -250,6 +251,8 @@ const HomePage: React.FC = () => {
   const { language: uiLanguage, t } = useUiLanguage();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isSubmittingMarketReview, setIsSubmittingMarketReview] = useState(false);
+  const [isSubmittingComposite, setIsSubmittingComposite] = useState(false);
+  const [compositeNotice, setCompositeNotice] = useState<MarketReviewNotice>(null);
   const [marketReviewNotice, setMarketReviewNotice] = useState<MarketReviewNotice>(null);
   const [marketReviewError, setMarketReviewError] = useState<ParsedApiError | null>(null);
   const [marketReviewReport, setMarketReviewReport] = useState<string | null>(null);
@@ -1109,6 +1112,37 @@ const HomePage: React.FC = () => {
     return tasksByCode;
   }, [activeTasks]);
 
+  const activeCompositeTask = useMemo(
+    () => activeTasks.find((task) => task.taskType === 'composite_analysis'),
+    [activeTasks],
+  );
+
+  const handleTriggerCompositeAnalysis = useCallback(async () => {
+    if (watchlistState.watchlistCodes.length === 0) {
+      setCompositeNotice({ variant: 'warning', title: t('home.compositeAnalysis'), message: t('home.compositeEmpty') });
+      return;
+    }
+    setIsSubmittingComposite(true);
+    setCompositeNotice(null);
+    try {
+      const result = await analysisApi.triggerCompositeAnalysis({
+        stockCodes: watchlistState.watchlistCodes,
+        notify,
+        reportType: 'full',
+        reportLanguage: uiLanguage === 'en' ? 'en' : 'zh',
+        skills: selectedAnalysisSkills,
+        regions: marketReviewRegionOverride,
+      });
+      setCompositeNotice({ variant: 'success', title: t('home.compositeSubmitted'), message: result.message });
+      await refreshActiveTasks();
+    } catch (err: unknown) {
+      const parsed = getParsedApiError(err);
+      setCompositeNotice({ variant: 'danger', title: t('home.compositeConflict'), message: parsed.message });
+    } finally {
+      setIsSubmittingComposite(false);
+    }
+  }, [marketReviewRegionOverride, notify, refreshActiveTasks, selectedAnalysisSkills, t, uiLanguage, watchlistState.watchlistCodes]);
+
   const watchlistRows = useMemo<HomeWatchlistRow[]>(() => (
     watchlistState.watchlistCodes.map((code) => {
       const key = getStockCodeKey(code);
@@ -1534,6 +1568,19 @@ const HomePage: React.FC = () => {
                 <BarChart3 className="h-4 w-4" aria-hidden="true" />
                 {t('home.marketReview')}
               </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="md"
+                isLoading={isSubmittingComposite}
+                loadingText={t('home.compositeSubmitting')}
+                onClick={() => void handleTriggerCompositeAnalysis()}
+                disabled={watchlistState.watchlistCodes.length === 0 || Boolean(activeCompositeTask)}
+                className="h-10 flex-1 whitespace-nowrap border-primary/35 text-primary md:flex-none"
+              >
+                <Sparkles className="h-4 w-4" aria-hidden="true" />
+                {t('home.compositeAnalysis')}
+              </Button>
               <button
                 type="button"
                 onClick={() => handleSubmitAnalysis()}
@@ -1634,6 +1681,24 @@ const HomePage: React.FC = () => {
             data-testid="home-dashboard-scroll"
             className="flex-1 min-w-0 min-h-0 overflow-x-auto overflow-y-auto px-3 pb-4 md:px-6 touch-pan-y"
           >
+            {compositeNotice ? (
+              <div className="mb-3">
+                <InlineAlert
+                  variant={compositeNotice.variant}
+                  title={compositeNotice.title}
+                  message={compositeNotice.message}
+                  className="rounded-xl px-3 py-2 text-xs shadow-none"
+                />
+              </div>
+            ) : null}
+
+            {activeCompositeTask ? (
+              <CompositeTaskCard
+                task={activeCompositeTask}
+                onViewReport={(historyId) => void selectHistoryItem(historyId)}
+              />
+            ) : null}
+
             {marketReviewNotice ? (
               <div className="mb-3">
                 <InlineAlert

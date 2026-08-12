@@ -6,7 +6,7 @@
 // ============ Request Types ============
 
 export type StockReportType = 'simple' | 'detailed' | 'full' | 'brief';
-export type ReportType = StockReportType | 'market_review';
+export type ReportType = StockReportType | 'market_review' | 'composite_analysis';
 export type AnalysisPhase = 'auto' | 'premarket' | 'intraday' | 'postmarket';
 export type MarketReviewRegion = 'cn' | 'hk' | 'us' | 'jp' | 'kr';
 
@@ -38,6 +38,34 @@ export interface MarketReviewAccepted {
   region: string;
   traceId?: string;
   taskId?: string;
+}
+
+export interface CompositeAnalysisRequest {
+  stockCodes: string[];
+  notify: boolean;
+  reportType?: StockReportType;
+  reportLanguage?: ReportLanguage;
+  skills?: string[];
+  regions?: readonly MarketReviewRegion[];
+}
+
+export interface CompositeTaskAccepted {
+  taskId: string;
+  traceId?: string;
+  status: 'pending';
+  message: string;
+  stockCodes: string[];
+  notify: boolean;
+  region: string;
+}
+
+export interface CompositeTaskState {
+  phase: 'pending' | 'stocks' | 'market_review' | 'report' | 'notification' | 'completed';
+  stockCodes: string[];
+  stockSummary: { total: number; completed: number; failed: number; currentStockCode?: string | null };
+  marketReview: { status: string };
+  report: { status: string; historyId?: number | null };
+  notification: { requested: boolean; status: string };
 }
 
 // ============ Report Types ============
@@ -457,7 +485,7 @@ export type AnalyzeResponse = AnalysisResult | AnalyzeAsyncResponse;
 export interface TaskStatus {
   taskId: string;
   traceId?: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancel_requested' | 'cancelled';
+  status: 'pending' | 'processing' | 'completed' | 'partial' | 'failed' | 'cancel_requested' | 'cancelled';
   progress?: number;
   result?: AnalysisResult;
   marketReviewReport?: string;
@@ -469,6 +497,9 @@ export interface TaskStatus {
   selectionSource?: string;
   analysisPhase?: AnalysisPhase | null;
   skills?: string[];
+  taskType?: string;
+  parentTaskId?: string;
+  composite?: CompositeTaskState;
 }
 
 /** Task details used by task list and SSE events */
@@ -477,7 +508,7 @@ export interface TaskInfo {
   traceId?: string;
   stockCode: string;
   stockName?: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancel_requested' | 'cancelled';
+  status: 'pending' | 'processing' | 'completed' | 'partial' | 'failed' | 'cancel_requested' | 'cancelled';
   progress: number;
   message?: string;
   reportType: string;
@@ -490,6 +521,9 @@ export interface TaskInfo {
   analysisPhase?: AnalysisPhase;
   skills?: string[];
   region?: string;
+  taskType?: string;
+  parentTaskId?: string;
+  composite?: CompositeTaskState;
 }
 
 /** Task list response */

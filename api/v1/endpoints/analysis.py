@@ -1191,6 +1191,9 @@ def get_analysis_status(task_id: str) -> TaskStatus:
             selection_source=task.selection_source,
             analysis_phase=task.analysis_phase,
             skills=getattr(task, "skills", None),
+            task_type=getattr(task, "task_type", "stock_analysis"),
+            parent_task_id=getattr(task, "parent_task_id", None),
+            composite=getattr(task, "composite", None),
         )
     
     # 2. 从数据库查询已完成的记录

@@ -150,6 +150,11 @@ const zh = {
 
   'home.analyze': '分析',
   'home.analyzing': '分析中',
+  'home.compositeAnalysis': '综合分析',
+  'home.compositeConflict': '综合分析无法提交',
+  'home.compositeEmpty': '请先在自选股中添加至少一支股票。',
+  'home.compositeSubmitted': '综合分析已提交',
+  'home.compositeSubmitting': '提交中',
   'home.askAi': '追问 AI',
   'home.defaultStrategyDescription': '沿用系统默认分析框架',
   'home.defaultStrategyName': '默认策略',
@@ -1101,6 +1106,11 @@ const en: Record<UiTextKey, string> = {
 
   'home.analyze': 'Analyze',
   'home.analyzing': 'Analyzing',
+  'home.compositeAnalysis': 'Composite',
+  'home.compositeConflict': 'Composite analysis unavailable',
+  'home.compositeEmpty': 'Add at least one stock to the watchlist first.',
+  'home.compositeSubmitted': 'Composite analysis submitted',
+  'home.compositeSubmitting': 'Submitting',
   'home.askAi': 'Ask AI',
   'home.defaultStrategyDescription': 'Use the system default analysis framework',
   'home.defaultStrategyName': 'Default strategy',
