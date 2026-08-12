@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] 修复设置页 Agent 渠道诊断将 OpenCode CLI、Claude Code CLI 错误显示为 Codex CLI 的问题。
 - [修复] 修复本地 CLI 生成后端未继承标准代理环境变量，导致 Codex CLI 等后端在代理网络中执行超时的问题。
 - [新功能] Web 首页新增“综合分析”，一次执行全部自选股与大盘复盘，保存一份综合报告，并按首页“推送通知”开关决定是否发送合并通知；部分失败时继续完成其余项目并列出失败项。
+- [改进] Web 首页自选股快速添加框支持按代码或名称匹配股票；选择候选仅加入自选，不会触发分析。
 
 ## [3.30.0] - 2026-08-09
 

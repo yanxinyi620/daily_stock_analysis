@@ -13,7 +13,8 @@ import {
   Star,
   Trash2,
 } from 'lucide-react';
-import { Badge, Button, InlineAlert, Input, ScrollArea, StatusDot } from '../common';
+import { Badge, Button, InlineAlert, ScrollArea, StatusDot } from '../common';
+import { StockAutocomplete } from '../StockAutocomplete';
 import { DashboardPanelHeader, DashboardStateBlock } from '../dashboard';
 import { StockBar } from '../history';
 import type { StockBarItem, TaskInfo } from '../../types/analysis';
@@ -299,12 +300,17 @@ export const HomeStockWorkspace: React.FC<HomeStockWorkspaceProps> = ({
     return { message: t('watchlist.noLatestDetail') };
   }, [t, watchlistRows, workspaceNoticeCode]);
 
+  const addWatchlistCode = async (rawCode: string) => {
+    const code = rawCode.trim();
+    if (!code || watchlistActioning) return;
+    setWorkspaceNoticeCode(null);
+    await onAddToWatchlist(code);
+    setDraftCode('');
+  };
+
   const handleAddSubmit = (event: React.FormEvent) => {
     event.preventDefault();
-    const code = draftCode.trim();
-    if (!code) return;
-    setWorkspaceNoticeCode(null);
-    void onAddToWatchlist(code).then(() => setDraftCode(''));
+    void addWatchlistCode(draftCode);
   };
 
   const handleWatchlistRowOpen = (row: HomeWatchlistRow) => {
@@ -436,13 +442,14 @@ export const HomeStockWorkspace: React.FC<HomeStockWorkspaceProps> = ({
               </Button>
             </div>
             <form className="grid grid-cols-[minmax(0,1fr)_auto] gap-2" onSubmit={handleAddSubmit}>
-              <Input
+              <StockAutocomplete
                 value={draftCode}
-                onChange={(event) => setDraftCode(event.target.value)}
+                onChange={setDraftCode}
+                onSubmit={(code) => void addWatchlistCode(code)}
                 placeholder={t('watchlist.addPlaceholder')}
                 className="h-8 rounded-lg px-3 text-xs"
                 disabled={watchlistActioning}
-                aria-label={t('watchlist.addPlaceholder')}
+                ariaLabel={t('watchlist.addPlaceholder')}
               />
               <Button
                 type="submit"
