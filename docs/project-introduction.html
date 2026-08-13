@@ -1,0 +1,2021 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Daily Stock Analysis 项目介绍：说明选股、每日分析、问股、回测与提醒如何配合，并用贵州茅台历史案例展示报告生成过程。"
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230c2026'/%3E%3Cpath d='M15 43 27 29l9 8 13-18' fill='none' stroke='%23e2a64b' stroke-width='6'/%3E%3C/svg%3E"
+    />
+    <title>DSA · 从发现机会到持续跟踪</title>
+    <script>
+      document.documentElement.classList.add("js");
+    </script>
+    <style>
+      :root {
+        --ink: #10272d;
+        --navy: #0b2026;
+        --paper: #f4f0e7;
+        --paper2: #ebe4d6;
+        --white: #fffdf8;
+        --muted: #526266;
+        --line: #cec5b4;
+        --blue: #246b82;
+        --red: #a94328;
+        --amber: #ad7120;
+        --green: #286b50;
+        --shadow: 0 18px 50px rgba(14, 31, 35, 0.1);
+        --serif: "Noto Serif SC", "Songti SC", STSong, serif;
+        --sans: "Noto Sans SC", "Microsoft YaHei", sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+        scroll-padding-top: 88px;
+      }
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: var(--sans);
+        font-size: 16px;
+        line-height: 1.78;
+      }
+      a {
+        color: inherit;
+      }
+      img {
+        display: block;
+        max-width: 100%;
+      }
+      .progress {
+        position: fixed;
+        z-index: 20;
+        inset: 0 0 auto;
+        height: 4px;
+        background: rgba(255, 255, 255, 0.2);
+      }
+      .progress span {
+        display: block;
+        width: 0;
+        height: 100%;
+        background: var(--amber);
+      }
+      .masthead {
+        background: var(--navy);
+        color: #f7f0e2;
+        padding: 18px max(24px, calc((100vw - 1180px) / 2));
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 20px;
+      }
+      .brand {
+        font-family: var(--serif);
+        font-weight: 700;
+        letter-spacing: 0.08em;
+      }
+      .edition {
+        font-size: 12px;
+        color: #b9c7c7;
+        letter-spacing: 0.08em;
+      }
+      .hero {
+        background: var(--navy);
+        color: #f7f0e2;
+        min-height: 70vh;
+        padding: 8vh max(24px, calc((100vw - 1180px) / 2)) 10vh;
+        display: grid;
+        grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
+        align-items: end;
+        gap: 8vw;
+        position: relative;
+        overflow: hidden;
+      }
+      .hero:after {
+        content: "";
+        position: absolute;
+        width: 520px;
+        height: 520px;
+        border: 1px solid rgba(226, 166, 75, 0.2);
+        border-radius: 50%;
+        right: -180px;
+        top: -210px;
+        box-shadow:
+          0 0 0 80px rgba(226, 166, 75, 0.035),
+          0 0 0 160px rgba(226, 166, 75, 0.025);
+      }
+      .eyebrow {
+        color: #e2a64b;
+        text-transform: uppercase;
+        letter-spacing: 0.17em;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .hero h1 {
+        font-family: var(--serif);
+        font-size: clamp(44px, 6.3vw, 92px);
+        line-height: 1.08;
+        margin: 0.2em 0;
+        font-weight: 600;
+        letter-spacing: -0.045em;
+      }
+      .hero h1 span {
+        display: block;
+        color: #d7e3df;
+      }
+      .standfirst {
+        font-family: var(--serif);
+        font-size: clamp(19px, 2vw, 27px);
+        line-height: 1.6;
+        max-width: 780px;
+      }
+      .hero-meta {
+        border-top: 1px solid #456065;
+        padding-top: 22px;
+        font-size: 14px;
+        color: #c3d0cf;
+      }
+      .hero-meta strong {
+        display: block;
+        color: #fff;
+        font-family: var(--serif);
+        font-size: 19px;
+        margin: 8px 0;
+      }
+      .disclaimer {
+        border-left: 3px solid var(--amber);
+        padding-left: 14px;
+        margin-top: 22px;
+        color: #d7dfdd;
+      }
+      .layout {
+        max-width: 1240px;
+        margin: auto;
+        display: grid;
+        grid-template-columns: 210px minmax(0, 1fr);
+        gap: 64px;
+        padding: 0 30px;
+      }
+      .toc {
+        position: sticky;
+        top: 32px;
+        align-self: start;
+        margin-top: 76px;
+        padding: 20px 0;
+        border-top: 2px solid var(--ink);
+        border-bottom: 1px solid var(--line);
+      }
+      .toc-title {
+        font-family: var(--serif);
+        font-weight: 700;
+        margin-bottom: 12px;
+      }
+      .toc a {
+        display: block;
+        text-decoration: none;
+        color: var(--muted);
+        font-size: 13px;
+        padding: 6px 8px;
+        border-left: 2px solid transparent;
+      }
+      .toc a.active {
+        color: var(--ink);
+        border-color: var(--amber);
+        font-weight: 700;
+      }
+      .toc .version-link {
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid var(--line);
+        color: var(--red);
+        font-weight: 700;
+      }
+      .report {
+        min-width: 0;
+      }
+      .chapter {
+        padding: 92px 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .chapter-no {
+        font-size: 12px;
+        color: var(--red);
+        letter-spacing: 0.14em;
+        font-weight: 800;
+      }
+      .chapter h2 {
+        font: 600 clamp(34px, 4.5vw, 58px) / 1.14 var(--serif);
+        letter-spacing: -0.035em;
+        margin: 8px 0 24px;
+        max-width: 850px;
+      }
+      .chapter-purpose {
+        max-width: 780px;
+        margin: -8px 0 22px;
+        padding: 11px 14px;
+        border-left: 3px solid var(--amber);
+        background: rgba(255, 253, 248, 0.68);
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .chapter-purpose strong { color: var(--ink); }
+      .chapter-subsection {
+        margin-top: 66px;
+        padding-top: 52px;
+        border-top: 1px solid var(--line);
+      }
+      .subsection-no {
+        color: var(--red);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+      }
+      .lead {
+        font: 400 21px/1.75 var(--serif);
+        max-width: 780px;
+        color: #294148;
+      }
+      .narrative {
+        max-width: 780px;
+      }
+      .source-note {
+        font-size: 12px;
+        color: var(--muted);
+        border-top: 1px solid var(--line);
+        padding-top: 10px;
+        margin-top: 20px;
+      }
+      .grid3 {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+        margin: 32px 0;
+      }
+      .metric,
+      .card {
+        background: var(--white);
+        border: 1px solid var(--line);
+        padding: 24px;
+        box-shadow: 0 5px 20px rgba(20, 35, 38, 0.035);
+      }
+      .metric b {
+        font: 600 36px/1 var(--serif);
+        display: block;
+        color: var(--blue);
+        margin-bottom: 12px;
+      }
+      .metric span,
+      .card p {
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .callout {
+        margin: 32px 0;
+        padding: 26px 30px;
+        background: var(--navy);
+        color: #f5efe4;
+        border-left: 5px solid var(--amber);
+      }
+      .callout strong {
+        font-family: var(--serif);
+        font-size: 21px;
+      }
+      .cap-map {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2px;
+        background: var(--line);
+        border: 1px solid var(--line);
+        margin: 34px 0;
+      }
+      .cap {
+        background: var(--white);
+        padding: 25px;
+      }
+      .cap small {
+        color: var(--red);
+        font-weight: 800;
+      }
+      .cap h3 {
+        font-family: var(--serif);
+        margin: 5px 0;
+      }
+      .collaboration-flow {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(130px, 1fr));
+        gap: 10px;
+        margin: 34px 0 14px;
+      }
+      .collaboration-step {
+        position: relative;
+        min-height: 170px;
+        padding: 20px 18px;
+        background: var(--navy);
+        color: #f5efe4;
+        border-top: 4px solid var(--amber);
+      }
+      .collaboration-step:not(:last-child)::after {
+        content: "→";
+        position: absolute;
+        z-index: 2;
+        right: -17px;
+        top: 50%;
+        width: 24px;
+        height: 24px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--paper);
+        color: var(--red);
+        font-weight: 800;
+      }
+      .collaboration-step small {
+        color: #e2a64b;
+        font-weight: 800;
+      }
+      .collaboration-step h3 {
+        margin: 7px 0;
+        font-family: var(--serif);
+        font-size: 19px;
+      }
+      .collaboration-step p {
+        margin: 0;
+        color: #c8d5d2;
+        font-size: 12px;
+        line-height: 1.65;
+      }
+      .loop-note {
+        margin: 0 0 34px;
+        color: var(--muted);
+        font-size: 13px;
+        text-align: right;
+      }
+      .case-chain {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 2px;
+        margin: 26px 0;
+        border: 1px solid var(--line);
+        background: var(--line);
+      }
+      .case-chain div {
+        padding: 18px;
+        background: var(--white);
+      }
+      .case-chain b {
+        display: block;
+        margin-bottom: 7px;
+        color: var(--red);
+        font-family: var(--serif);
+      }
+      .case-chain span {
+        font-size: 13px;
+      }
+      .collaboration-table { min-width: 820px; }
+      .tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+      }
+      .tag {
+        font-size: 12px;
+        border: 1px solid var(--line);
+        border-radius: 99px;
+        padding: 3px 9px;
+        background: var(--paper);
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 14px;
+      }
+      .table-wrap {
+        overflow-x: auto;
+        margin: 28px 0;
+        border-top: 2px solid var(--ink);
+      }
+      th,
+      td {
+        text-align: left;
+        vertical-align: top;
+        padding: 13px 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      th {
+        font-size: 12px;
+        letter-spacing: 0.05em;
+        background: var(--paper2);
+      }
+      .case-dossier {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 22px;
+        margin: 34px 0;
+      }
+      .dossier-main {
+        background: var(--white);
+        padding: 28px;
+        border-top: 5px solid var(--red);
+      }
+      .dossier-side {
+        padding: 28px;
+        background: var(--paper2);
+      }
+      .big-code {
+        font: 600 46px/1 var(--serif);
+      }
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .status:before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+      .available {
+        color: var(--green);
+      }
+      .partial {
+        color: var(--amber);
+      }
+      .missing,
+      .failed {
+        color: var(--red);
+      }
+      .empty {
+        color: var(--blue);
+      }
+      .lineage {
+        margin: 38px 0;
+        padding: 26px;
+        background: var(--navy);
+        color: #eef4f0;
+        overflow-x: auto;
+      }
+      .lineage-row {
+        display: flex;
+        min-width: 940px;
+        align-items: stretch;
+      }
+      .line-node {
+        flex: 1;
+        border: 1px solid #476068;
+        padding: 15px;
+        background: #102a31;
+      }
+      .line-node b {
+        display: block;
+        color: #e2a64b;
+        font-family: var(--serif);
+      }
+      .line-node span {
+        font-size: 12px;
+        color: #bdcdcb;
+      }
+      .arrow {
+        display: grid;
+        place-items: center;
+        padding: 0 7px;
+        color: #e2a64b;
+      }
+      .case-step {
+        display: grid;
+        grid-template-columns: 110px minmax(0, 1fr);
+        gap: 24px;
+        margin: 42px 0;
+      }
+      .step-index {
+        font: 600 58px/1 var(--serif);
+        color: var(--red);
+        border-top: 2px solid var(--red);
+        padding-top: 10px;
+      }
+      .ledger {
+        background: var(--white);
+        border: 1px solid var(--line);
+      }
+      .ledger header {
+        padding: 24px 26px;
+        background: var(--paper2);
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: start;
+      }
+      .ledger h3 {
+        font: 600 25px/1.3 var(--serif);
+        margin: 0;
+      }
+      .ledger-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+      }
+      .ledger-cell {
+        padding: 18px 24px;
+        border-top: 1px solid var(--line);
+      }
+      .ledger-cell:nth-child(odd) {
+        border-right: 1px solid var(--line);
+      }
+      .ledger-cell.wide {
+        grid-column: 1/-1;
+        border-right: 0;
+      }
+      .ledger-cell dt {
+        text-transform: uppercase;
+        color: var(--red);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+      }
+      .ledger-cell dd {
+        margin: 5px 0 0;
+        font-size: 14px;
+      }
+      .quality-matrix {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        border: 1px solid var(--line);
+        margin: 34px 0;
+      }
+      .quality-state {
+        padding: 18px;
+        border-right: 1px solid var(--line);
+        background: var(--white);
+      }
+      .quality-state:last-child {
+        border: 0;
+      }
+      .quality-state code {
+        display: block;
+        font-weight: 800;
+        margin-bottom: 8px;
+      }
+      .quality-state p {
+        font-size: 12px;
+        color: var(--muted);
+        margin: 0;
+      }
+      .price-position {
+        background: var(--white);
+        border: 1px solid var(--line);
+        padding: 26px;
+        margin: 30px 0;
+      }
+      .price-scale {
+        position: relative;
+        height: 155px;
+        margin: 28px 22px 0;
+        border-bottom: 2px solid var(--ink);
+      }
+      .price-scale:before {
+        content: "1310";
+        position: absolute;
+        bottom: -28px;
+        left: 0;
+        font-size: 11px;
+      }
+      .price-scale:after {
+        content: "1360";
+        position: absolute;
+        bottom: -28px;
+        right: 0;
+        font-size: 11px;
+      }
+      .point {
+        position: absolute;
+        bottom: -5px;
+        transform: translateX(-50%);
+        height: var(--h);
+        border-left: 2px solid var(--c);
+      }
+      .point b {
+        position: absolute;
+        top: -28px;
+        left: 6px;
+        white-space: nowrap;
+        font-size: 12px;
+        color: var(--c);
+      }
+      .point em {
+        font-style: normal;
+        font-weight: 400;
+        color: var(--muted);
+      }
+      .report-sheet {
+        background: var(--white);
+        box-shadow: var(--shadow);
+        margin: 38px 0;
+        padding: clamp(24px, 5vw, 60px);
+        border-top: 8px solid var(--navy);
+      }
+      .report-head {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 20px;
+        border-bottom: 2px solid var(--ink);
+        padding-bottom: 24px;
+      }
+      .report-head h3 {
+        font: 600 34px/1.2 var(--serif);
+        margin: 0;
+      }
+      .verdict {
+        display: flex;
+        gap: 10px;
+        margin: 24px 0;
+      }
+      .pill {
+        padding: 7px 15px;
+        border: 1px solid var(--ink);
+        font-weight: 700;
+      }
+      .pill.primary {
+        background: var(--navy);
+        color: white;
+      }
+      .report-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 28px;
+      }
+      .report-block {
+        border-top: 2px solid var(--ink);
+        padding-top: 14px;
+      }
+      .report-block h4 {
+        font-family: var(--serif);
+        font-size: 20px;
+        margin: 0 0 8px;
+      }
+      .report-block p,
+      .report-block li {
+        font-size: 14px;
+      }
+      .level-list {
+        list-style: none;
+        padding: 0;
+      }
+      .level-list li {
+        display: flex;
+        justify-content: space-between;
+        border-bottom: 1px dotted var(--line);
+        padding: 7px 0;
+      }
+      .weights {
+        display: flex;
+        height: 36px;
+        margin: 12px 0;
+        color: white;
+        font-size: 11px;
+        font-weight: 700;
+      }
+      .weights span {
+        display: grid;
+        place-items: center;
+      }
+      .w1 {
+        width: 45%;
+        background: #245d72;
+      }
+      .w2 {
+        width: 10%;
+        background: #9b6930;
+      }
+      .w3 {
+        width: 20%;
+        background: #54724e;
+      }
+      .w4 {
+        width: 25%;
+        background: #6a536f;
+      }
+      .provenance th:first-child {
+        width: 16%;
+      }
+      .provenance {
+        min-width: 700px;
+      }
+      .provenance td:nth-child(2) {
+        width: 27%;
+      }
+      .rule {
+        font-family: monospace;
+        color: var(--blue);
+      }
+      .architecture {
+        margin: 36px 0;
+      }
+      .arch-layer {
+        display: grid;
+        grid-template-columns: 180px 1fr;
+        gap: 25px;
+        padding: 20px;
+        border-top: 1px solid var(--line);
+      }
+      .arch-layer:first-child {
+        border-top: 3px solid var(--ink);
+      }
+      .arch-layer b {
+        font-family: var(--serif);
+        font-size: 20px;
+      }
+      .evidence-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 28px;
+        margin: 36px 0;
+      }
+      .evidence {
+        margin: 0;
+        background: var(--white);
+        border: 1px solid var(--line);
+        padding: 12px;
+      }
+      .evidence img { width: 100%; height: auto; }
+      .evidence figcaption {
+        font-size: 12px;
+        color: var(--muted);
+        padding: 10px 6px 3px;
+      }
+      .static-tour {
+        display: none;
+      }
+      .adoption-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+        margin: 30px 0;
+      }
+      .adoption-grid h3 {
+        font-family: var(--serif);
+      }
+      .doc-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .doc-links a {
+        padding: 9px 13px;
+        border: 1px solid var(--ink);
+        text-decoration: none;
+        background: var(--white);
+      }
+      footer {
+        background: var(--navy);
+        color: #c7d4d2;
+        padding: 42px max(24px, calc((100vw - 1180px) / 2));
+        font-size: 13px;
+      }
+      .js .reveal {
+        opacity: 0;
+        transform: translateY(22px);
+        transition: 0.55s ease;
+      }
+      .js .reveal.is-visible {
+        opacity: 1;
+        transform: none;
+      }
+      .noscript-note {
+        display: block;
+        padding: 10px 20px;
+        background: #fff1ca;
+        color: #5d461a;
+        text-align: center;
+      }
+      @media (max-width: 900px) {
+        .hero {
+          grid-template-columns: 1fr;
+        }
+        .layout {
+          display: block;
+          padding: 0 22px;
+        }
+        .toc {
+          z-index: 10;
+          top: 0;
+          margin: 0 -22px;
+          padding: 8px 18px;
+          display: flex;
+          overflow: auto;
+          background: rgba(244, 240, 231, 0.96);
+          border-top: 0;
+        }
+        .toc-title {
+          display: none;
+        }
+        .toc a {
+          white-space: nowrap;
+          border-left: 0;
+          border-bottom: 2px solid transparent;
+        }
+        .toc a.active {
+          border-bottom-color: var(--amber);
+        }
+        .grid3,
+        .adoption-grid {
+          grid-template-columns: 1fr;
+        }
+        .cap-map,
+        .case-dossier,
+        .report-grid,
+        .evidence-grid {
+          grid-template-columns: 1fr;
+        }
+        .collaboration-flow {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .collaboration-step:not(:last-child)::after { display: none; }
+        .case-chain { grid-template-columns: 1fr; }
+        .quality-matrix {
+          grid-template-columns: 1fr;
+        }
+        .quality-state {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+        .case-step {
+          grid-template-columns: 70px 1fr;
+        }
+        .ledger-grid {
+          grid-template-columns: 1fr;
+        }
+        .ledger-cell:nth-child(odd) {
+          border-right: 0;
+        }
+        .ledger-cell.wide {
+          grid-column: auto;
+        }
+        .arch-layer {
+          grid-template-columns: 1fr;
+        }
+      }
+      @media (max-width: 560px) {
+        body {
+          font-size: 15px;
+        }
+        .hero {
+          min-height: auto;
+          padding-top: 55px;
+        }
+        .chapter {
+          padding: 65px 0;
+        }
+        .case-step {
+          display: block;
+        }
+        .step-index {
+          font-size: 30px;
+          margin-bottom: 10px;
+        }
+        .ledger header {
+          display: block;
+        }
+        .report-head {
+          grid-template-columns: 1fr;
+        }
+        .report-sheet { margin-left: 0; margin-right: 0; }
+        .verdict {
+          flex-wrap: wrap;
+        }
+        .price-scale {
+          height: auto;
+          margin: 15px 0;
+          border: 0;
+        }
+        .point {
+          position: static;
+          transform: none;
+          height: auto;
+          border-left: 4px solid var(--c);
+          display: block;
+          margin: 7px 0;
+          padding: 8px;
+        }
+        .point b {
+          position: static;
+        }
+        .lineage { margin-left: 0; margin-right: 0; }
+        .collaboration-flow { grid-template-columns: 1fr; }
+        .collaboration-step { min-height: auto; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+        .js .reveal {
+          opacity: 1;
+          transform: none;
+          transition: none;
+        }
+        .animated-tour {
+          display: none;
+        }
+        .static-tour {
+          display: block;
+        }
+      }
+      @media print {
+        :root {
+          --paper: #fff;
+          --white: #fff;
+          --muted: #465456;
+          --line: #aaa;
+        }
+        body {
+          font-size: 10pt;
+          background: #fff;
+        }
+        .progress,
+        .toc {
+          display: none;
+        }
+        .layout {
+          display: block;
+          max-width: none;
+          padding: 0;
+        }
+        .hero {
+          min-height: auto;
+          padding: 28pt;
+          color: #fff;
+          background: #10272d;
+        }
+        .chapter {
+          padding: 28pt 0;
+          break-before: page;
+        }
+        .chapter:first-child {
+          break-before: auto;
+        }
+        .js .reveal {
+          opacity: 1;
+          transform: none;
+        }
+        .report-sheet,
+        .metric,
+        .card {
+          box-shadow: none;
+        }
+        .animated-tour {
+          display: none;
+        }
+        .static-tour {
+          display: block;
+        }
+        .lineage {
+          break-inside: avoid;
+        }
+        .case-step,
+        .report-block,
+        .evidence {
+          break-inside: avoid;
+        }
+        .doc-links a {
+          padding: 0;
+          border: 0;
+        }
+        .doc-links a:after {
+          content: " (" attr(href) ")";
+        }
+        .provenance { min-width: 0; font-size: 8pt; }
+        .collaboration-table { min-width: 0; font-size: 8pt; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="progress" aria-label="阅读进度"><span></span></div>
+    <noscript class="noscript-note"
+      >JavaScript 仅用于目录高亮与阅读进度；全部正文、图表与案例无需 JavaScript
+      即可阅读。</noscript
+    >
+    <header class="masthead">
+      <div class="brand">DAILY STOCK ANALYSIS</div>
+      <div class="edition">PROJECT BRIEF · 2026</div>
+    </header>
+    <section class="hero">
+      <div>
+        <div class="eyebrow">产品介绍 · 工作流程 · 完整案例</div>
+        <h1>从发现机会，<span>到持续跟踪</span></h1>
+        <p class="standfirst">
+          Daily Stock Analysis 如何连接选股、每日分析、问股、回测与提醒，并生成一份有依据、可复查的股票分析报告。下文以贵州茅台（600519）的一次历史分析为完整案例。
+        </p>
+      </div>
+      <aside class="hero-meta">
+        <span>适合读者</span><strong>产品、技术与非技术协作者</strong
+        ><span>阅读方式</span
+        ><strong>速读约 10–15 分钟<br />完整阅读约 25–35 分钟</strong>
+        <p class="disclaimer">
+          案例数据截至
+          2026-08-12，仅用于解释系统工作方式，不代表当前行情，不构成投资建议。
+        </p>
+      </aside>
+    </section>
+    <div class="layout">
+      <nav class="toc" aria-label="报告目录">
+        <div class="toc-title">目录 / 7 章</div>
+        <a class="toc-chapter" href="#executive-summary">01 项目价值</a>
+        <a class="toc-chapter" href="#capability-map">02 产品能力与协同</a>
+        <a class="toc-chapter" href="#case-pipeline">03 系统怎样完成分析</a>
+        <a class="toc-chapter" href="#case-brief">04 贵州茅台完整案例</a>
+        <a class="toc-chapter" href="#final-report">05 最终报告与结论依据</a>
+        <a class="toc-chapter" href="#technical-foundation">06 技术实现与系统边界</a>
+        <a class="toc-chapter" href="#adoption">07 使用方式与限制</a>
+        <a class="version-link" href="project-introduction-compact.html">查看六章精简版</a>
+      </nav>
+      <main class="report">
+        <section class="chapter reveal" id="executive-summary" data-main-section="value">
+          <div class="chapter-no">01 / 项目价值</div>
+          <h2>项目解决什么问题</h2>
+          <p class="chapter-purpose"><strong>本章回答：</strong>为什么需要这套系统，它适合谁，又有哪些明确边界？</p>
+          <p class="lead">
+            用户输入股票代码后，DSA 会获取行情、计算技术指标并查找相关新闻。系统先核对数据是否完整，再让模型根据已有数据整理说明。最后，用户会在 Web、桌面端或通知消息中看到结论、理由、风险和需要继续观察的条件。
+          </p>
+          <div class="grid3">
+            <div class="metric">
+              <b>8 步</b><strong>过程看得见</strong
+              ><span>从输入代码到保存报告，每一步都说明拿到了什么、做了什么。</span>
+            </div>
+            <div class="metric">
+              <b>5 种</b><strong>数据状态</strong
+              ><span>区分可用、部分可用、缺失、失败和结果为空，不把未知写成确定。</span>
+            </div>
+            <div class="metric">
+              <b>3 层</b><strong>决策表达</strong
+              ><span>事实层、解释层、行动层彼此分开又能相互追溯。</span>
+            </div>
+          </div>
+          <div class="callout">
+            <strong>先算清楚，再写结论。</strong
+            ><br />价格、均线和交易时段由程序计算或核对。模型负责把这些数据讲清楚，但不能改动数字，也不能忽略缺失的数据。
+          </div>
+          <div class="narrative">
+            <p>
+              这个系统不承诺预测涨跌。它主要减少重复工作：自动收集多个来源的行情，计算指标，查找新闻，指出缺少哪些资料，再给出有条件的操作建议。报告可以保存、分享，也可以继续设置提醒。
+            </p>
+          </div>
+        </section>
+        <section class="chapter reveal" id="capability-map" data-main-section="capabilities">
+          <div class="chapter-no">02 / 产品能力与协同</div>
+          <h2>产品能力怎样相互配合</h2>
+          <p class="chapter-purpose"><strong>本章回答：</strong>系统有哪些主要功能，它们怎样从发现股票一直衔接到持续跟踪？</p>
+          <p class="lead">
+            用户可以从个人工作台、自动任务、API 或机器人发起分析。入口虽然不同，系统使用的数据和报告格式保持一致。
+          </p>
+          <div class="cap-map">
+            <article class="cap">
+              <small>分析</small>
+              <h3>市场与证券分析</h3>
+              <p>
+                覆盖 A
+                股、港股、美股；行情、技术指标、新闻、基本面和市场环境会放在一起分析。
+              </p>
+              <div class="tags">
+                <span class="tag">多市场数据</span
+                ><span class="tag">技术指标</span
+                ><span class="tag">新闻检索</span
+                ><span class="tag">LLM 分析</span>
+              </div>
+            </article>
+            <article class="cap">
+              <small>工作界面</small>
+              <h3>Web 与 Desktop</h3>
+              <p>
+                从单股分析、历史报告到组合分析、提醒中心，构成可持续使用的研究工作台。
+              </p>
+              <div class="tags">
+                <span class="tag">报告</span><span class="tag">历史</span
+                ><span class="tag">自选</span><span class="tag">提醒</span>
+              </div>
+            </article>
+            <article class="cap">
+              <small>其他研究工具</small>
+              <h3>对话助手和其他研究工具</h3>
+              <p>
+                用户可以通过对话助手 Agent 提问、导入文件、查看历史策略表现，也可以把多只股票放在一起比较。
+              </p>
+              <div class="tags">
+                <span class="tag">Agent</span><span class="tag">导入</span
+                ><span class="tag">回测</span><span class="tag">组合</span>
+              </div>
+            </article>
+            <article class="cap">
+              <small>自动运行和通知</small>
+              <h3>自动化与分发</h3>
+              <p>
+                定时任务、API、Bot
+                和多渠道通知，把一次分析变为可重复、可触达的工作流。
+              </p>
+              <div class="tags">
+                <span class="tag">Scheduler</span><span class="tag">API</span
+                ><span class="tag">Bot</span
+                ><span class="tag">Notifications</span>
+              </div>
+            </article>
+          </div>
+          <p class="source-note">
+            这里列出的功能来自项目当前已有的入口和模块。本材料重点说明“单股报告怎样生成”，其他功能只做简要介绍。
+          </p>
+        <div class="chapter-subsection" id="feature-collaboration" data-subsection="feature-collaboration">
+          <div class="subsection-no">功能怎样配合</div>
+          <h2>从发现股票，到持续跟踪</h2>
+          <p class="lead">
+            这些功能并不是重复做同一份报告。选股负责缩小范围，每日综合分析负责找出当天重点，单股分析负责深入查看，问股负责继续追问，回测负责检查历史表现，自选股和提醒负责把关注延续到下一天。
+          </p>
+          <div class="collaboration-flow" data-visual="feature-collaboration" aria-label="各项功能的常见使用顺序">
+            <article class="collaboration-step"><small>01 · 发现</small><h3>选股</h3><p>按价格、指标、题材或内置策略筛出候选股票，先把研究范围缩小。</p></article>
+            <article class="collaboration-step"><small>02 · 浏览</small><h3>每日综合分析</h3><p>批量分析自选股，并结合大盘复盘，找出当天需要优先查看的股票。</p></article>
+            <article class="collaboration-step"><small>03 · 深入</small><h3>单股分析</h3><p>获取一只股票的行情、技术指标和新闻，形成关键价位与风险说明。</p></article>
+            <article class="collaboration-step"><small>04 · 追问</small><h3>问股</h3><p>针对已有报告继续提问，例如为什么观望、什么条件下需要重新判断。</p></article>
+            <article class="collaboration-step"><small>05 · 检查</small><h3>回测</h3><p>查看历史报告或策略在后续行情中的表现，检查判断是否经常有效。</p></article>
+            <article class="collaboration-step"><small>06 · 跟踪</small><h3>自选股与提醒</h3><p>保存需要继续关注的股票和价位条件，进入下一次每日分析。</p></article>
+          </div>
+          <p class="loop-note">完成一次跟踪后，新的行情和提醒结果会成为下一轮研究的起点。</p>
+
+          <div class="table-wrap" tabindex="0" role="region" aria-label="各项功能的输入、用途、输出和下一步，可横向滚动">
+            <table class="collaboration-table">
+              <thead><tr><th>功能</th><th>拿到什么</th><th>主要解决什么问题</th><th>得到什么</th><th>常见下一步</th></tr></thead>
+              <tbody>
+                <tr><td><strong>选股</strong></td><td>市场范围、筛选条件或策略</td><td>股票很多，先看哪些</td><td>候选股票列表和命中理由</td><td>打开候选股的单股分析，或加入自选股</td></tr>
+                <tr><td><strong>每日综合分析</strong></td><td>自选股、大盘信息和当天任务设置</td><td>今天先看哪几只、整体市场怎样</td><td>个股执行结果、大盘复盘和综合报告</td><td>进入重点股票的详细报告</td></tr>
+                <tr><td><strong>单股分析</strong></td><td>股票代码、行情、历史价格和新闻</td><td>这只股票当前处在什么位置</td><td>结论、理由、关键价位、风险和观察条件</td><td>继续问股，或设置关键价位提醒</td></tr>
+                <tr><td><strong>问股</strong></td><td>用户问题和已经保存的分析资料</td><td>报告中还有哪些问题需要讲清楚</td><td>针对问题的解释和后续检查项</td><td>返回报告核对，或查看历史表现</td></tr>
+                <tr><td><strong>回测</strong></td><td>历史分析、策略规则和后续行情</td><td>过去类似判断表现怎样</td><td>历史任务、结果和统计汇总</td><td>调整关注条件，再进行新的研究</td></tr>
+                <tr><td><strong>自选股与提醒</strong></td><td>候选股票和需要观察的价位</td><td>怎样持续关注，而不是只看一次</td><td>自选股列表、批量分析任务和提醒记录</td><td>进入下一次每日综合分析</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>贵州茅台串联示例</h3>
+          <div class="case-chain">
+            <div><b>每日综合分析</b><span>在自选股报告中看到贵州茅台需要继续观察。</span></div>
+            <div><b>单股分析</b><span>打开 600519 报告，查看 1331.71–1336.47 观察区和 1354.01 上方阻力。</span></div>
+            <div><b>问股</b><span>继续询问“为什么现在不追买”“跌到哪里需要重新判断”。</span></div>
+            <div><b>回测</b><span>查看历史分析在后续行情中的表现，了解类似判断是否稳定。</span></div>
+            <div><b>自选股与提醒</b><span>保留股票并设置关键价位，等待下一次行情确认。</span></div>
+          </div>
+          <div class="callout"><strong>这里展示的是研究顺序，不是自动交易流程。</strong><br />选股结果不等于买入建议；回测结果不能保证未来表现；从候选股进入分析、根据结果设置提醒或调整策略，通常仍由用户主动决定。</div>
+        </div>
+        </section>
+        <section class="chapter" id="case-pipeline" data-main-section="workflow">
+          <div class="chapter-no">03 / 系统怎样完成分析</div>
+          <h2>一份报告怎样经过八步完成</h2>
+          <p class="chapter-purpose"><strong>本章回答：</strong>每一步拿到什么、使用什么工具、怎样处理、输出什么，以及数据不足时怎么办？</p>
+          <p class="lead">
+            下面按实际顺序说明这次分析。每一步都会写清楚拿到了什么、用了哪个工具、得到什么结果，以及结果会交给下一步做什么。
+          </p>
+          <figure class="lineage" data-visual="lineage">
+            <figcaption class="eyebrow">数据从哪里来，最后到哪里去</figcaption>
+            <div class="lineage-row">
+              <div class="line-node">
+                <b>任务</b><span>600519 · 单股 · 午间</span>
+              </div>
+              <i class="arrow">→</i>
+              <div class="line-node">
+                <b>行情</b><span>1345.43 · -0.08%</span>
+              </div>
+              <i class="arrow">→</i>
+              <div class="line-node">
+                <b>技术指标</b><span>5/10/20 日平均价格 · 强度 40</span>
+              </div>
+              <i class="arrow">→</i>
+              <div class="line-node">
+                <b>情报</b><span>近 3 日搜索 empty</span>
+              </div>
+              <i class="arrow">→</i>
+              <div class="line-node">
+                <b>统一资料</b><span>数据 + 状态 + 时间</span>
+              </div>
+              <i class="arrow">→</i>
+              <div class="line-node">
+                <b>判断</b><span>观望 · 震荡 · 54</span>
+              </div>
+              <i class="arrow">→</i>
+              <div class="line-node">
+                <b>结果</b><span>报告 · 历史 · 通知</span>
+              </div>
+            </div>
+          </figure>
+          <article class="case-step reveal" data-case-step="1">
+            <div class="step-index">01</div>
+            <div class="ledger">
+              <header>
+                <h3>标的识别与市场阶段</h3>
+                <span class="status available">可用（available）</span>
+              </header>
+              <dl class="ledger-grid">
+                <div class="ledger-cell" data-ledger="goal">
+                  <dt>这一步要做什么</dt>
+                  <dd>把用户意图变为可执行任务。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="input">
+                  <dt>拿到什么</dt>
+                  <dd>股票代码 600519、单股分析、默认报告参数。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="tool">
+                  <dt>使用什么</dt>
+                  <dd>代码规范化、市场识别、交易日历与市场阶段判断。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="processing">
+                  <dt>怎样处理</dt>
+                  <dd>识别 A 股、标准化代码，并判断为午间休市。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="output">
+                  <dt>得到什么</dt>
+                  <dd>贵州茅台（600519）、A 股、2026-08-12 午间、当日日线未完成。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="quality">
+                  <dt>数据不足怎么办</dt>
+                  <dd>代码无效则终止；盘中状态作为时效警告贯穿后续步骤。</dd>
+                </div>
+                <div class="ledger-cell wide" data-ledger="next">
+                  <dt>接下来交给谁</dt>
+                  <dd>标准证券身份和任务参数交给行情管理器。</dd>
+                </div>
+              </dl>
+            </div>
+          </article>
+          <article class="case-step reveal" data-case-step="2">
+            <div class="step-index">02</div>
+            <div class="ledger">
+              <header>
+                <h3>行情与基础事实采集</h3>
+                <span class="status available">可用（available）</span>
+              </header>
+              <dl class="ledger-grid">
+                <div class="ledger-cell" data-ledger="goal">
+                  <dt>这一步要做什么</dt>
+                  <dd>建立可计算的价格事实。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="input">
+                  <dt>拿到什么</dt>
+                  <dd>标准代码 600519 与所需时间窗。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="tool">
+                  <dt>使用什么</dt>
+                  <dd>数据来源管理器 DataFetcherManager；本次使用腾讯财经。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="processing">
+                  <dt>怎样处理</dt>
+                  <dd>
+                    先请求优先级较高的数据源，再把不同来源的字段整理成同一种格式。如果失败，就尝试备用来源。
+                  </dd>
+                </div>
+                <div class="ledger-cell" data-ledger="output">
+                  <dt>得到什么</dt>
+                  <dd>现价 1345.43、涨跌幅 -0.08% 及历史 K 线序列。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="quality">
+                  <dt>数据不足怎么办</dt>
+                  <dd>
+                    报价可用。某一个来源失败时，系统会尝试备用来源，不会立即中止整次分析。
+                  </dd>
+                </div>
+                <div class="ledger-cell wide" data-ledger="next">
+                  <dt>接下来交给谁</dt>
+                  <dd>把统一格式的开盘、最高、最低、收盘、成交量数据（OHLCV）和数据来源交给指标计算程序。</dd>
+                </div>
+              </dl>
+            </div>
+          </article>
+          <article class="case-step reveal" data-case-step="3">
+            <div class="step-index">03</div>
+            <div class="ledger">
+              <header>
+                <h3>技术指标与趋势判断</h3>
+                <span class="status partial">部分可用（partial）</span>
+              </header>
+              <dl class="ledger-grid">
+                <div class="ledger-cell" data-ledger="goal">
+                  <dt>这一步要做什么</dt>
+                  <dd>根据历史价格计算均线和关键价位，让读者可以核对。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="input">
+                  <dt>拿到什么</dt>
+                  <dd>标准化历史行情、现价与分析时间。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="tool">
+                  <dt>使用什么</dt>
+                  <dd>技术指标计算器 StockTrendAnalyzer，以及交易时段判断。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="processing">
+                  <dt>怎样处理</dt>
+                  <dd>计算均线、偏离度与趋势强度；识别午间未收盘状态。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="output">
+                  <dt>得到什么</dt>
+                  <dd>
+                    MA5 1331.71、MA10 1336.47、MA20 1316.86；趋势强度 40。
+                  </dd>
+                </div>
+                <div class="ledger-cell" data-ledger="quality">
+                  <dt>数据不足怎么办</dt>
+                  <dd>均线数值可用，但技术数据整体只有部分可用（partial）。当天还没有收盘，所以盘中日线只能作为参考。</dd>
+                </div>
+                <div class="ledger-cell wide" data-ledger="next">
+                  <dt>接下来交给谁</dt>
+                  <dd>把技术指标和“盘中未收盘”提醒交给后面的分析步骤。</dd>
+                </div>
+              </dl>
+            </div>
+          </article>
+          <figure class="price-position" data-visual="price-position">
+            <figcaption>
+              <strong>关键价位在同一尺度上的位置</strong>（历史快照，单位：元）
+            </figcaption>
+            <div class="price-scale">
+              <span class="point" style="left: 13.72%; --h: 42px; --c: #a94328"
+                ><b>MA20 / 止损 <em>1316.86</em></b></span
+              ><span class="point" style="left: 43.42%; --h: 80px; --c: #ad7120"
+                ><b>MA5 <em>1331.71</em></b></span
+              ><span
+                class="point"
+                style="left: 52.94%; --h: 112px; --c: #246b82"
+                ><b>MA10 <em>1336.47</em></b></span
+              ><span class="point" style="left: 70.86%; --h: 70px; --c: #286b50"
+                ><b>现价 <em>1345.43</em></b></span
+              ><span
+                class="point"
+                style="left: 88.02%; --h: 128px; --c: #6d466e"
+                ><b>压力 <em>1354.01</em></b></span
+              >
+            </div>
+          </figure>
+          <article class="case-step reveal" data-case-step="4">
+            <div class="step-index">04</div>
+            <div class="ledger">
+              <header>
+                <h3>新闻与市场情报</h3>
+                <span class="status empty">结果为空（empty）</span>
+              </header>
+              <dl class="ledger-grid">
+                <div class="ledger-cell" data-ledger="goal">
+                  <dt>这一步要做什么</dt>
+                  <dd>查找价格数据之外的公司新闻、风险和可能的利好。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="input">
+                  <dt>拿到什么</dt>
+                  <dd>公司名、代码、近 3 日时间窗与主题查询。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="tool">
+                  <dt>使用什么</dt>
+                  <dd>新闻搜索工具 SearchService / SearXNG。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="processing">
+                  <dt>怎样处理</dt>
+                  <dd>组合查询、去重、相关性筛选与来源记录。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="output">
+                  <dt>得到什么</dt>
+                  <dd>本次未获得可确认的近 3 日新闻样本。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="quality">
+                  <dt>数据不足怎么办</dt>
+                  <dd>标记为结果为空（empty）。没有搜到新闻，不代表公司没有风险。</dd>
+                </div>
+                <div class="ledger-cell wide" data-ledger="next">
+                  <dt>接下来交给谁</dt>
+                  <dd>把“没有搜到可确认信息”及其限制写入统一资料。</dd>
+                </div>
+              </dl>
+            </div>
+          </article>
+          <article class="case-step reveal" data-case-step="5">
+            <div class="step-index">05</div>
+            <div class="ledger">
+              <header>
+                <h3>基本面、板块与数据质量</h3>
+                <span class="status partial">部分可用（partial）</span>
+              </header>
+              <dl class="ledger-grid">
+                <div class="ledger-cell" data-ledger="goal">
+                  <dt>这一步要做什么</dt>
+                  <dd>继续获取估值、基本面、板块、筹码和资金数据，并检查是否完整。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="input">
+                  <dt>拿到什么</dt>
+                  <dd>实时估值、基本面资料包、板块信息、筹码和资金数据。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="tool">
+                  <dt>使用什么</dt>
+                  <dd>基本面资料、市场结构服务、板块数据和数据状态检查。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="processing">
+                  <dt>怎样处理</dt>
+                  <dd>
+                    分别标记可用、部分可用、缺失、失败和结果为空，并写明哪些资料不能用于强结论。
+                  </dd>
+                </div>
+                <div class="ledger-cell" data-ledger="output">
+                  <dt>得到什么</dt>
+                  <dd>
+                    估值可用；基本面部分可用；资金数据获取失败或缺失；筹码数据缺失；板块排名获取失败或结果为空。
+                  </dd>
+                </div>
+                <div class="ledger-cell" data-ledger="quality">
+                  <dt>数据不足怎么办</dt>
+                  <dd>
+                    整体只有部分数据可用。分析仍可继续，但报告会降低把握程度，并明确说明缺少什么。
+                  </dd>
+                </div>
+                <div class="ledger-cell wide" data-ledger="next">
+                  <dt>接下来交给谁</dt>
+                  <dd>把各类数据和状态交给资料整理程序。</dd>
+                </div>
+              </dl>
+            </div>
+          </article>
+          <div class="quality-matrix" data-visual="quality-matrix">
+            <div class="quality-state" data-quality-state="available">
+              <code class="available">可用（available）</code>
+              <p>数据已经拿到，可以直接使用。本例是报价和均线数值。</p>
+            </div>
+            <div class="quality-state" data-quality-state="partial">
+              <code class="partial">部分可用（partial）</code>
+              <p>只拿到一部分资料。报告会降低把握程度，并说明限制。</p>
+            </div>
+            <div class="quality-state" data-quality-state="missing">
+              <code class="missing">缺失（missing）</code>
+              <p>没有拿到这项数据。报告不能自行补写具体事实。</p>
+            </div>
+            <div class="quality-state" data-quality-state="failed">
+              <code class="failed">失败（failed）</code>
+              <p>获取或计算时发生错误。系统会记录原因，并尝试其他方法。</p>
+            </div>
+            <div class="quality-state" data-quality-state="empty">
+              <code class="empty">结果为空（empty）</code>
+              <p>工具运行正常，但没有找到内容。搜索为空不等于没有风险。</p>
+            </div>
+          </div>
+          <article class="case-step reveal" data-case-step="6">
+            <div class="step-index">06</div>
+            <div class="ledger">
+              <header>
+                <h3>整理成一份统一的分析资料</h3>
+                <span class="status partial">部分可用（partial）</span>
+              </header>
+              <dl class="ledger-grid">
+                <div class="ledger-cell" data-ledger="goal">
+                  <dt>这一步要做什么</dt>
+                  <dd>把分散的数据整理成一份统一资料，供模型读取，也方便后续检查问题。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="input">
+                  <dt>拿到什么</dt>
+                  <dd>行情、技术、新闻、基本面、板块、市场阶段与诊断。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="tool">
+                  <dt>使用什么</dt>
+                  <dd>资料整理器 AnalysisContextBuilder、统一资料包 AnalysisContextPack 和运行记录 Diagnostics。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="processing">
+                  <dt>怎样处理</dt>
+                  <dd>
+                    按固定栏目记录每类数据的内容、来源、状态、提醒和缺失原因。
+                  </dd>
+                </div>
+                <div class="ledger-cell" data-ledger="output">
+                  <dt>得到什么</dt>
+                  <dd>一份给模型使用的统一资料包，以及数据状态和限制清单。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="quality">
+                  <dt>数据不足怎么办</dt>
+                  <dd>
+                    整体为部分可用（partial）。模型既能看到已有数据，也能看到哪些资料没有拿到。
+                  </dd>
+                </div>
+                <div class="ledger-cell wide" data-ledger="next">
+                  <dt>接下来交给谁</dt>
+                  <dd>把统一资料和报告要求交给模型整理。</dd>
+                </div>
+              </dl>
+            </div>
+          </article>
+          <article class="case-step reveal" data-case-step="7">
+            <div class="step-index">07</div>
+            <div class="ledger">
+              <header>
+                <h3>模型整理结论，程序检查规则</h3>
+                <span class="status partial">中等把握（中等置信度）</span>
+              </header>
+              <dl class="ledger-grid">
+                <div class="ledger-cell" data-ledger="goal">
+                  <dt>这一步要做什么</dt>
+                  <dd>根据已有数据说明情况，并给出带条件的行动建议。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="input">
+                  <dt>拿到什么</dt>
+                  <dd>AnalysisContextPack、报告结构要求与交易纪律。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="tool">
+                  <dt>使用什么</dt>
+                  <dd>负责整理说明的 LLM Analyzer、字段补全，以及规则检查器 Guardrails。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="processing">
+                  <dt>怎样处理</dt>
+                  <dd>
+                    先形成报告初稿，再检查趋势判断、追高风险、支撑止损、盘中时效和引用数字是否互相冲突。
+                  </dd>
+                </div>
+                <div class="ledger-cell" data-ledger="output">
+                  <dt>得到什么</dt>
+                  <dd>观望 / 震荡、评分 54、双场景建议与关键点位。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="quality">
+                  <dt>数据不足怎么办</dt>
+                  <dd>技术数据部分可用，新闻搜索结果为空，因此报告只给中等把握，并使用“如果……再……”的条件句。</dd>
+                </div>
+                <div class="ledger-cell wide" data-ledger="next">
+                  <dt>接下来交给谁</dt>
+                  <dd>把检查后的结论交给报告生成和保存程序。</dd>
+                </div>
+              </dl>
+            </div>
+          </article>
+          <article class="case-step reveal" data-case-step="8">
+            <div class="step-index">08</div>
+            <div class="ledger">
+              <header>
+                <h3>报告、历史、诊断与通知</h3>
+                <span class="status available">可用（available）</span>
+              </header>
+              <dl class="ledger-grid">
+                <div class="ledger-cell" data-ledger="goal">
+                  <dt>这一步要做什么</dt>
+                  <dd>让结果可追踪、可复查、可触达。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="input">
+                  <dt>拿到什么</dt>
+                  <dd>检查后的分析结果、股票信息、任务状态和时间。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="tool">
+                  <dt>使用什么</dt>
+                  <dd>报告生成器 Report Renderer、历史记录 History Service、运行记录 Diagnostics 和通知服务 Notification Service。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="processing">
+                  <dt>怎样处理</dt>
+                  <dd>
+                    生成 Markdown/Web 报告，保存当时使用的资料，并按设置发送通知。
+                  </dd>
+                </div>
+                <div class="ledger-cell" data-ledger="output">
+                  <dt>得到什么</dt>
+                  <dd>可在 Web/Desktop 查询的历史报告及通知结果。</dd>
+                </div>
+                <div class="ledger-cell" data-ledger="quality">
+                  <dt>数据不足怎么办</dt>
+                  <dd>通知失败不应推翻已完成分析；诊断保留失败原因。</dd>
+                </div>
+                <div class="ledger-cell wide" data-ledger="next">
+                  <dt>接下来交给谁</dt>
+                  <dd>用户可以回看和对比报告，后续自动任务也可以再次使用这份历史结果。</dd>
+                </div>
+              </dl>
+            </div>
+          </article>
+        </section>
+        <section class="chapter reveal" id="case-brief" data-main-section="case">
+          <div class="chapter-no">04 / 贵州茅台完整案例</div>
+          <h2>贵州茅台案例使用了哪些数据</h2>
+          <p class="chapter-purpose"><strong>本章回答：</strong>这次历史分析的输入是什么、哪些资料可用、哪些资料仍然不完整？</p>
+          <p class="lead">
+            我们用仓库中已保存的 2026-08-12
+            分析记录还原一次任务。这里不讨论后来股价涨跌，只说明系统拿到了哪些数据、缺少哪些数据，以及怎样写出当时的报告。
+          </p>
+          <div class="case-dossier">
+            <div class="dossier-main">
+              <div class="eyebrow">历史案例 · A 股</div>
+              <h3>贵州茅台</h3>
+              <div class="big-code">600519</div>
+              <div class="table-wrap">
+                <table>
+                  <tr>
+                    <th>用户问题</th>
+                    <td>当前技术位置如何？空仓和持仓分别应如何行动？</td>
+                  </tr>
+                  <tr>
+                    <th>分析时间</th>
+                    <td>2026-08-12 午间，日线尚未收盘</td>
+                  </tr>
+                  <tr>
+                    <th>已知行情</th>
+                    <td>现价 1345.43，涨跌幅 -0.08%，来源腾讯财经</td>
+                  </tr>
+                  <tr>
+                    <th>最终得到</th>
+                    <td>趋势判断、关键价位、双场景建议、风险条件、数据限制</td>
+                  </tr>
+                </table>
+              </div>
+            </div>
+            <aside class="dossier-side">
+              <h3>这次拿到了什么，哪些数据还不完整</h3>
+              <p>
+                <span class="status available">可用（available）</span> 报价与均线数值
+              </p>
+              <p>
+                <span class="status empty">结果为空（empty）</span> 近 3 日没有搜到可确认的新闻
+              </p>
+              <p>
+                <span class="status partial">部分可用（partial）</span> 基本面资料不完整
+              </p>
+              <p><span class="status missing">缺失（missing）</span> 筹码等数据没有提供</p>
+              <p>
+                <strong>历史数据声明：</strong>1345.43
+                等所有数字均为该次历史快照，不是当前行情。
+              </p>
+            </aside>
+          </div>
+          <div class="callout">
+            <strong>这次分析能说到什么程度？</strong
+            >现有技术数据可以说明价格处在什么位置，但新闻、筹码和部分资金数据不完整。因此，报告只能给出“满足什么条件再行动”，不能把不完整的信息写成确定结论。
+          </div>
+        </section>
+        <section class="chapter reveal" id="final-report" data-main-section="report">
+          <div class="chapter-no">05 / 最终报告与结论依据</div>
+          <h2>最终报告与结论依据</h2>
+          <p class="chapter-purpose"><strong>本章回答：</strong>最终报告怎样表达事实、判断和行动条件，每项结论又来自哪些数据？</p>
+          <p class="lead">
+            下面把历史记录重构为一份完整的人类可读报告。它保留原始结论与数值，同时把事实、判断和限制分层。
+          </p>
+          <article class="report-sheet" data-report="moutai-2026-08-12">
+            <div class="report-head">
+              <div>
+                <div class="eyebrow">历史分析报告</div>
+                <h3>贵州茅台（600519）</h3>
+                <span>2026-08-12 · 午间快照 · 腾讯财经</span>
+              </div>
+              <div class="big-code">1345.43</div>
+            </div>
+            <div class="verdict">
+              <span class="pill primary">建议：观望</span
+              ><span class="pill">走势：震荡</span
+              ><span class="pill">评分：54 / 100</span
+              ><span class="pill">把握程度：中等（中等置信度）</span>
+            </div>
+            <div class="callout">
+              <strong>一句话结论</strong><br />MA5、MA10、MA20 分别表示最近 5、10、20 个交易日的平均价格。当时价格高于这三条均线，但 5 日均价仍低于 10 日均价，短期上涨还不够稳定；趋势强度只有 40。由于当天尚未收盘，报告建议先观察，不在价格刚上涨时追买，等关键价位出现更明确的信号再行动。
+            </div>
+            <div class="report-grid">
+              <section class="report-block">
+                <h4>当日行情</h4>
+                <p>昨收 1348.86 · 开盘 1346.50 · 最高 1354.01 · 最低 1332.51 · 量比 0.96 · 换手率 0.14%</p>
+                <p>成交量 175.78 万股，成交额 23.61 亿元。以上均为午间实时快照，非完整日线。</p>
+              </section>
+              <section class="report-block">
+                <h4>市场与技术结构</h4>
+                <ul class="level-list">
+                  <li>
+                    <span>当时价格 / 涨跌</span
+                    ><strong>1345.43 / -0.08%</strong>
+                  </li>
+                  <li><span>MA5</span><strong>1331.71</strong></li>
+                  <li><span>MA10</span><strong>1336.47</strong></li>
+                  <li><span>MA20</span><strong>1316.86</strong></li>
+                  <li>
+                    <span>现价高于 5 日均价</span><strong>+1.03%，偏离不大</strong>
+                  </li>
+                  <li><span>第一压力 / 目标</span><strong>1354.01</strong></li>
+                </ul>
+              </section>
+              <section class="report-block">
+                <h4>空仓计划</h4>
+                <p>不在 1345.43 附近追高。等待两类确认之一：</p>
+                <ol>
+                  <li>价格回到 1331.71–1336.47 区间时，成交量减少，并且不再继续下跌；</li>
+                  <li>价格升到 1354.01 以上时，成交量明显增加，并在盘中或收盘时仍站在该价位上方。</li>
+                </ol>
+                <p>仓位：空仓者 0 成观察；确认后不超过 2 成。未出现确认信号前保持观望。</p>
+              </section>
+              <section class="report-block">
+                <h4>持仓计划</h4>
+                <p>
+                  价格保持在 20 日平均价 1316.86 之上时，可以继续观察持有。如果价格跌到 1316.86 以下，同时成交量明显增加，说明下跌力度较强，应按计划减仓或止损。接近 1354.01 时，要同时观察价格能否站稳、成交量是否增加，不能把短暂触碰当成真正突破。
+                </p>
+                <p>仓位：持仓者控制在 5 成以内，并预留 T+1 的隔夜风险缓冲。</p>
+              </section>
+              <section class="report-block">
+                <h4>关键决策点</h4>
+                <ul class="level-list">
+                  <li><span>理想买入点</span><strong>1331.71，止跌承接后</strong></li>
+                  <li><span>次优买入点</span><strong>1336.47，回踩不破后</strong></li>
+                  <li><span>止损位</span><strong>1316.86，跌破且无法快速收回</strong></li>
+                  <li><span>目标 / 上方阻力</span><strong>1354.01，价格站稳且成交增加后再评估</strong></li>
+                </ul>
+              </section>
+              <section class="report-block">
+                <h4>新闻、风险和可能的利好</h4>
+                <p>
+                  近 3
+                  日搜索没有找到可确认的新闻，因此报告没有据此判断利好或利空。没有搜到新闻，并不等于公司、行业或宏观层面没有风险。
+                </p>
+                <p>
+                  <strong>主要风险：</strong
+                  >当天还没有收盘、新闻搜索没有结果、筹码数据缺失，部分资金和基本面资料也不完整。
+                </p>
+              </section>
+              <section class="report-block">
+                <h4>行动检查单</h4>
+                <ul>
+                  <li>价格回到 1331.71–1336.47 后，是否停止下跌？</li>
+                  <li>价格升到 1354.01 以上时，成交量是否明显增加？</li>
+                  <li>价格跌到 1316.86 以下时，成交量是否明显增加？</li>
+                  <li>收盘后均线和成交量是否仍支持盘中判断？</li>
+                  <li>是否出现新的公司公告或行业事件？</li>
+                </ul>
+                <p><strong>盘中检查规则：</strong>最后一根日线未完成，任何盘中突破或跌破都要结合量能，并在收盘后复核。</p>
+              </section>
+              <section class="report-block">
+                <h4>判断权重与限制</h4>
+                <div class="weights" aria-label="分析参考比例">
+                  <span class="w1">技术 45%</span
+                  ><span class="w2">新闻 10%</span
+                  ><span class="w3">基本面 20%</span
+                  ><span class="w4">市场 25%</span>
+                </div>
+                <p>
+                  技术指标在这次判断中占比最高，但不能只凭技术指标决定买入。新闻搜索没有结果，所以报告主要给出需要继续观察的条件。当天尚未收盘，收盘后还要重新检查。
+                </p>
+              </section>
+            </div>
+            <p class="source-note">
+              本报告复原自仓库历史报告与当时保存的分析资料。所有数值只描述
+              2026-08-12
+              的历史状态；内容只用于说明系统怎样工作，不构成投资建议。
+            </p>
+          </article>
+        <div class="chapter-subsection" id="provenance" data-subsection="conclusion-provenance">
+          <div class="subsection-no">结论依据</div>
+          <h2>为什么得出这个结论</h2>
+          <p class="lead">
+            只看模型给出的结论还不够。下面这张表进一步说明：结论参考了哪些数据、系统使用了什么判断规则，以及数据不完整时为什么要用更谨慎的说法。
+          </p>
+          <div class="table-wrap" data-visual="provenance-matrix" tabindex="0" role="region" aria-label="结论来源表，可横向滚动">
+            <table class="provenance">
+              <thead>
+                <tr>
+                  <th>结论是什么</th>
+                  <th>参考了哪些数据</th>
+                  <th>系统怎样判断</th>
+                  <th>报告怎样表达</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>观望</strong></td>
+                  <td>现价高于 5、10、20 日平均价，但 5 日均价仍低于 10 日均价；趋势强度 40</td>
+                  <td class="rule">位置改善 ≠ 趋势确认</td>
+                  <td>不直接建议买入，等待价格停止下跌或突破后站稳</td>
+                </tr>
+                <tr>
+                  <td><strong>震荡</strong></td>
+                  <td>短期均线还没有形成持续上涨的排列，价格高于 MA5 约 1.03%</td>
+                  <td class="rule">上涨趋势不够明确，但价格也没有明显偏高</td>
+                  <td>定义为弱势整理而非强趋势</td>
+                </tr>
+                <tr>
+                  <td><strong>买入观察区</strong></td>
+                  <td>5 日平均价 1331.71；10 日平均价 1336.47</td>
+                  <td class="rule">价格回到该区间后，需要先停止下跌</td>
+                  <td>1331.71–1336.47，仅观察不预判</td>
+                </tr>
+                <tr>
+                  <td><strong>止损</strong></td>
+                  <td>MA20 1316.86</td>
+                  <td class="rule">价格跌破该位且成交量增加，说明下跌力度较强</td>
+                  <td>持仓减仓/止损纪律</td>
+                </tr>
+                <tr>
+                  <td><strong>压力</strong></td>
+                  <td>第一压力 1354.01</td>
+                  <td class="rule">短暂触及不算突破；价格需要站稳，同时成交量增加</td>
+                  <td>突破后再评估，避免追瞬时价格</td>
+                </tr>
+                <tr>
+                  <td><strong>新闻中性</strong></td>
+                  <td>近 3 日检索结果 empty</td>
+                  <td class="rule">无样本 ≠ 无风险</td>
+                  <td>不补写没有搜到的利好消息，并说明搜索限制</td>
+                </tr>
+                <tr>
+                  <td><strong>把握程度为中等（中等置信度）</strong></td>
+                  <td>
+                    技术 partial；新闻 empty；其余 partial/missing；日线未收盘
+                  </td>
+                  <td class="rule">数据越不完整，语气越谨慎</td>
+                  <td>使用条件句并要求收盘复核</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout">
+            <strong>程序负责算数字和查错，模型负责把结果说明白。</strong
+            ><br />价格、均线、数据来源、交易时段和数据状态都不能由模型随意改写。模型只能根据这些已有资料，分别说明空仓和持仓时应该关注什么。
+          </div>
+        </div>
+        </section>
+        <section class="chapter reveal" id="technical-foundation" data-main-section="technical">
+          <div class="chapter-no">06 / 技术实现与系统边界</div>
+          <h2>系统怎样实现，并在出错时保留结果</h2>
+          <p class="chapter-purpose"><strong>本章回答：</strong>任务怎样进入系统、数据怎样分析、报告怎样保存，以及单个环节失败时如何处理？</p>
+          <p class="lead">
+            系统把工作分成四部分：接收任务、安排分析步骤、获取并分析数据、保存报告和发送通知。这样更容易找到问题，也能避免一个环节出错后影响已经完成的工作。
+          </p>
+          <div class="architecture">
+            <div class="arch-layer">
+              <b>使用入口</b>
+              <div>
+                Web · Desktop · CLI · API · Bot · Scheduler<br /><small
+                  >用户可以从不同入口发起同一种分析任务，并得到相同格式的结果。</small
+                >
+              </div>
+            </div>
+            <div class="arch-layer">
+              <b>任务处理</b>
+              <div>
+                Pipeline · Services · Schemas · Repositories<br /><small
+                  >安排先做什么、后做什么，记录任务状态，并读写历史报告。</small
+                >
+              </div>
+            </div>
+            <div class="arch-layer">
+              <b>数据和分析</b>
+              <div>
+                DataFetcherManager · StockTrendAnalyzer · SearchService ·
+                AnalysisContextPack · LLM Analyzer · Guardrails<br /><small
+                  >切换数据源、计算指标、搜索新闻、检查数据状态，并由模型整理说明。</small
+                >
+              </div>
+            </div>
+            <div class="arch-layer">
+              <b>保存与通知</b>
+              <div>
+                Report Renderer · History Service · Diagnostics · Notification
+                Service<br /><small
+                  >生成并保存报告，记录错误；某个通知渠道失败时，已完成的报告仍会保留。</small
+                >
+              </div>
+            </div>
+          </div>
+          <div class="grid3">
+            <div class="card">
+              <h3>一个数据源失败时</h3>
+              <p>
+                系统会按顺序尝试备用行情源，再把不同来源的数据整理成相同格式。报告会保留实际使用的数据来源。
+              </p>
+            </div>
+            <div class="card">
+              <h3>数据不完整时</h3>
+              <p>
+                系统会区分是部分可用、完全缺失、获取失败，还是工具正常运行但没有结果。不同状态会影响报告的把握程度和用词。
+              </p>
+            </div>
+            <div class="card">
+              <h3>一个环节出错时</h3>
+              <p>
+                新闻搜索或某个通知渠道失败，不会推翻已经完成的行情和技术分析。运行记录工具 Diagnostics 会保存错误位置和原因，方便排查。
+              </p>
+            </div>
+          </div>
+          <div class="evidence-grid">
+            <figure class="evidence" data-interface-showcase="workspace">
+              <div class="evidence-media">
+                <img
+                  class="animated-tour"
+                  src="assets/readme_workspace_tour_20260510.gif"
+                  alt="DSA Web 工作台动图，展示从分析入口到结果查看的产品流程" />
+                <img
+                  class="static-tour"
+                  src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='650' viewBox='0 0 1200 650'%3E%3Crect width='1200' height='650' fill='%230c2026'/%3E%3Crect x='45' y='45' width='1110' height='560' rx='20' fill='%23f4f0e7'/%3E%3Ctext x='90' y='125' font-size='38' font-family='sans-serif' fill='%2310272d'%3EDSA Web Workspace%3C/text%3E%3Crect x='90' y='165' width='250' height='390' rx='12' fill='%23e6dece'/%3E%3Crect x='375' y='165' width='730' height='180' rx='12' fill='%23ffffff'/%3E%3C/svg%3E"
+                  alt="DSA Web 工作台静态示意图"
+                />
+              </div>
+              <figcaption>
+                真实产品界面：Web
+                工作台承载分析任务与结果浏览；减弱动画和打印时自动使用静态图。
+              </figcaption>
+            </figure>
+            <figure class="evidence" data-interface-showcase="alerts">
+              <img
+                src="assets/alert-center-p5-web.png"
+                alt="DSA Web 提醒中心真实界面截图"
+              />
+              <figcaption>
+                真实产品界面：提醒中心把分析后的关键条件变成持续关注事项。
+              </figcaption>
+            </figure>
+          </div>
+        </section>
+        <section class="chapter reveal" id="adoption" data-main-section="usage">
+          <div class="chapter-no">07 / 使用方式与限制</div>
+          <h2>怎样使用，以及哪些事不能依赖它</h2>
+          <p class="chapter-purpose"><strong>本章回答：</strong>个人、团队和自动任务怎样使用系统，哪些结果必须复核，哪些事情系统不能承诺？</p>
+          <p class="lead">
+            DSA 可以帮助用户收集资料、计算指标和整理检查项。它不能保证未来收益，也不能替代用户核对数据、判断风险和做出最终决定。
+          </p>
+          <div class="adoption-grid">
+            <article class="card">
+              <h3>个人研究</h3>
+              <p>
+                输入股票代码后，先看结论，再查看结论使用了哪些数据。把关键价位加入提醒，不要只保存一句“买”或“卖”。
+              </p>
+            </article>
+            <article class="card">
+              <h3>团队协作</h3>
+              <p>
+                产品人员关注报告是否好读、建议能否继续跟踪；技术人员关注数据是否正确、失败时怎样处理；其他参与者可以通过完整案例理解系统能做什么、不能做什么。
+              </p>
+            </article>
+            <article class="card">
+              <h3>自动运行</h3>
+              <p>
+                通过定时任务、API 或 Bot
+                批量执行；先配置数据源与模型，再验证通知渠道和历史留存。
+              </p>
+            </article>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>可以依赖</th>
+                  <th>必须复核</th>
+                  <th>不能承诺</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>指标的计算过程、数据来源、数据状态和历史报告</td>
+                  <td>
+                    实时行情时效、未收盘数据、新闻覆盖率、第三方数据源变化
+                  </td>
+                  <td>未来收益、绝对买卖时点、没有检索到的风险不存在</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <h3>进一步阅读</h3>
+          <div class="doc-links">
+            <a href="../README.md">项目首页</a
+            ><a href="full-guide.md">完整使用指南</a
+            ><a href="webui-guide.md">Web 使用说明</a
+            ><a href="deployment.md">部署说明</a>
+          </div>
+          <div class="callout">
+            <strong>建议的阅读顺序：</strong
+            >先看报告结论，再看关键价位和数据限制，最后查看“为什么得出这个结论”表格。判断一份报告是否可靠，不要看它说得多肯定，而要看它是否说明了“已经知道什么、还缺什么、下一步要观察什么”。
+          </div>
+        </section>
+      </main>
+    </div>
+    <footer>
+      Daily Stock Analysis · 项目介绍<br />案例来源：本地历史报告与当时保存的分析资料
+      · 数据日期 2026-08-12 · 非当前行情 · 不构成投资建议
+    </footer>
+    <script>
+      (() => {
+        const bar = document.querySelector(".progress span");
+        const sections = [...document.querySelectorAll("main section[id]")];
+        const links = [...document.querySelectorAll(".toc a")];
+        const update = () => {
+          const h = document.documentElement;
+          bar.style.width = `${Math.min(100, (h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100)}%`;
+        };
+        addEventListener("scroll", update, { passive: true });
+        const observer = new IntersectionObserver(
+          (entries) => {
+            entries.forEach((entry) => {
+              if (entry.isIntersecting) {
+                entry.target.classList.add("is-visible");
+                const link = links.find(
+                  (a) => a.hash === `#${entry.target.id}`,
+                );
+                if (link) {
+                  links.forEach((a) => a.classList.remove("active"));
+                  link.classList.add("active");
+                }
+              }
+            });
+          },
+          { rootMargin: "-15% 0px -70%" },
+        );
+        document
+          .querySelectorAll(".reveal, main section[id]")
+          .forEach((el) => observer.observe(el));
+        update();
+      })();
+    </script>
+  </body>
+</html>
