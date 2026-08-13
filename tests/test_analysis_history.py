@@ -1864,6 +1864,31 @@ class AnalysisHistoryTestCase(unittest.TestCase):
 
         self.assertEqual(markdown, "# 🎯 大盘复盘\n\n## 今日大盘\n\n复盘正文")
 
+    def test_history_markdown_returns_persisted_composite_report(self) -> None:
+        """Composite history must return its saved full report instead of a stock summary."""
+        full_report = "# 今日综合分析\n\n## 大盘复盘\n\n市场正文\n\n## 个股决策仪表盘\n\n个股正文"
+        result = AnalysisResult(
+            code="COMPOSITE",
+            name="今日综合分析",
+            sentiment_score=60,
+            trend_prediction="综合",
+            operation_advice="查看综合报告",
+            analysis_summary="2 支股票完成，0 支失败",
+            raw_response=full_report,
+        )
+
+        record_id = self.db.save_analysis_history(
+            result=result,
+            query_id="composite_query_001",
+            report_type="composite_analysis",
+            news_content=full_report,
+            context_snapshot={"task_type": "composite_analysis"},
+        )
+
+        markdown = HistoryService(self.db).get_markdown_report(str(record_id))
+
+        self.assertEqual(markdown, full_report)
+
     def test_history_markdown_collapses_unavailable_chip_structure(self) -> None:
         result = AnalysisResult(
             code="600519",

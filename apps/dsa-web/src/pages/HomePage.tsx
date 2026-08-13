@@ -15,6 +15,7 @@ import { ReportMarkdownDrawer } from '../components/report/ReportMarkdownDrawer'
 import { MarketReviewReportView } from '../components/report/MarketReviewReportView';
 import { MarketReviewRegionSelector } from '../components/market-review/MarketReviewRegionSelector';
 import { CompositeTaskCard } from '../components/composite-analysis/CompositeTaskCard';
+import { CompositeAnalysisReportView } from '../components/composite-analysis/CompositeAnalysisReportView';
 import { ReportSummary } from '../components/report/ReportSummary';
 import { RunFlowPanel } from '../components/run-flow';
 import { TaskPanel } from '../components/tasks';
@@ -479,7 +480,8 @@ const HomePage: React.FC = () => {
   const reportLanguage = normalizeReportLanguage(selectedReport?.meta.reportLanguage);
   const liveMarketReviewLanguage = normalizeReportLanguage(marketReviewPayload?.language);
   const isMarketReviewHistoryReport = selectedReport?.meta.reportType === 'market_review';
-  const isHistoryTrendUnavailable = !selectedReport || !selectedReport.meta.stockCode;
+  const isCompositeHistoryReport = selectedReport?.meta.reportType === 'composite_analysis';
+  const isHistoryTrendUnavailable = !selectedReport || !selectedReport.meta.stockCode || isCompositeHistoryReport;
 
   useEffect(() => {
     if (!isHistoryTrendUnavailable || !isHistoryTrendOpen) {
@@ -1743,7 +1745,19 @@ const HomePage: React.FC = () => {
             ) : !marketReviewReport && selectedReport ? (
               <div className={isHistoryTrendOpen ? 'max-w-6xl space-y-4 pb-8' : 'max-w-4xl space-y-4 pb-8'}>
                 <div className="flex flex-wrap items-center justify-end gap-2">
-                  {!isMarketReviewHistoryReport ? (
+                  {isCompositeHistoryReport ? (
+                    <Button
+                      variant="home-action-ai"
+                      size="sm"
+                      disabled={isSubmittingComposite || Boolean(activeCompositeTask) || watchlistState.watchlistCodes.length === 0}
+                      isLoading={isSubmittingComposite}
+                      loadingText={t('home.compositeSubmitting')}
+                      onClick={() => void handleTriggerCompositeAnalysis()}
+                    >
+                      <Sparkles className="h-4 w-4" />
+                      {t('home.rerunCompositeAnalysis')}
+                    </Button>
+                  ) : !isMarketReviewHistoryReport ? (
                     <>
                       <Button
                         variant="home-action-ai"
@@ -1781,22 +1795,24 @@ const HomePage: React.FC = () => {
                       {t('home.rerunMarketReview')}
                     </Button>
                   )}
-                  <Button
-                    variant="home-action-ai"
-                    size="sm"
-                    disabled={selectedReport.meta.id === undefined || isHistoryTrendUnavailable}
-                    className={isHistoryTrendOpen ? 'border-primary/70 bg-primary/15 text-primary shadow-glow-cyan' : undefined}
-                    onClick={() => {
-                      if (isHistoryTrendOpen) {
-                        closeHistoryTrend();
-                        return;
-                      }
-                      void openHistoryTrend();
-                    }}
-                  >
-                    <BarChart3 className="h-4 w-4" />
-                    {t('home.historyTrend')}
-                  </Button>
+                  {!isCompositeHistoryReport ? (
+                    <Button
+                      variant="home-action-ai"
+                      size="sm"
+                      disabled={selectedReport.meta.id === undefined || isHistoryTrendUnavailable}
+                      className={isHistoryTrendOpen ? 'border-primary/70 bg-primary/15 text-primary shadow-glow-cyan' : undefined}
+                      onClick={() => {
+                        if (isHistoryTrendOpen) {
+                          closeHistoryTrend();
+                          return;
+                        }
+                        void openHistoryTrend();
+                      }}
+                    >
+                      <BarChart3 className="h-4 w-4" />
+                      {t('home.historyTrend')}
+                    </Button>
+                  ) : null}
                   <Button
                     variant="home-action-ai"
                     size="sm"
@@ -1809,7 +1825,9 @@ const HomePage: React.FC = () => {
                     {t('home.fullReport')}
                   </Button>
                 </div>
-                {isHistoryTrendOpen ? (
+                {isCompositeHistoryReport ? (
+                  <CompositeAnalysisReportView report={selectedReport} />
+                ) : isHistoryTrendOpen ? (
                   <StockHistoryTrendDrawer
                     key={`stock-history-${selectedReport.meta.id}`}
                     report={selectedReport}

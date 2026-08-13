@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { analysisApi, DuplicateTaskError } from '../../api/analysis';
@@ -43,6 +43,7 @@ vi.mock('../../api/analysis', async () => {
     analysisApi: {
       analyzeAsync: vi.fn(),
       triggerMarketReview: vi.fn(),
+      triggerCompositeAnalysis: vi.fn(),
       getStatus: vi.fn(),
       getTasks: vi.fn(),
       getTaskFlow: vi.fn(),
@@ -95,6 +96,43 @@ const historyReport = {
     operationAdvice: '继续观察买点',
     trendPrediction: '短线震荡偏强',
     sentimentScore: 78,
+  },
+};
+
+const compositeHistoryItem = {
+  id: 42,
+  queryId: 'composite-q-1',
+  stockCode: 'COMPOSITE',
+  stockName: '今日综合分析',
+  reportType: 'composite_analysis' as const,
+  createdAt: '2026-08-12T10:00:00+08:00',
+};
+
+const compositeHistoryReport = {
+  meta: {
+    id: 42,
+    queryId: 'composite-q-1',
+    stockCode: 'COMPOSITE',
+    stockName: '今日综合分析',
+    reportType: 'composite_analysis' as const,
+    reportLanguage: 'zh' as const,
+    createdAt: '2026-08-12T10:00:00+08:00',
+  },
+  summary: {
+    analysisSummary: '3 支股票完成，0 支失败；大盘复盘 completed',
+    operationAdvice: '查看综合报告',
+    trendPrediction: '综合',
+    sentimentScore: 62,
+  },
+  details: {
+    newsContent: '# 今日综合分析\n\n> 执行摘要：计划 3 支，成功 3 支，失败 0 支。\n\n## 大盘复盘\n\n市场震荡。\n\n## 个股决策仪表盘\n\n贵州茅台：观望。',
+    contextSnapshot: {
+      taskType: 'composite_analysis',
+      stockCodes: ['600410', '600519', '000858'],
+      failedStocks: ['600410'],
+      marketReviewStatus: 'completed',
+      notificationRequested: true,
+    },
   },
 };
 
@@ -303,6 +341,48 @@ describe('HomePage', () => {
       expect(historyApi.getMarkdown).toHaveBeenCalledWith(historyReport.meta.id);
     });
     expect(await screen.findByRole('heading', { name: 'Full Markdown Report' })).toBeInTheDocument();
+  });
+
+  it('renders composite history without stock-only actions or strategy content', async () => {
+    vi.mocked(historyApi.getList).mockResolvedValue({
+      total: 1,
+      page: 1,
+      limit: 20,
+      items: [compositeHistoryItem],
+    });
+    vi.mocked(historyApi.getDetail).mockResolvedValue(compositeHistoryReport);
+
+    render(
+      <MemoryRouter>
+        <HomePage />
+      </MemoryRouter>,
+    );
+
+    const compositeReport = await screen.findByTestId('composite-analysis-report');
+    expect(within(compositeReport).getByRole('heading', { name: '今日综合分析' })).toBeInTheDocument();
+    expect(within(compositeReport).getByText('个股执行')).toBeInTheDocument();
+    expect(within(compositeReport).getByText('2 / 3')).toBeInTheDocument();
+    expect(within(compositeReport).getByText('失败 1 支')).toBeInTheDocument();
+    expect(within(compositeReport).getByText('成功率')).toBeInTheDocument();
+    expect(within(compositeReport).getByText('67%')).toBeInTheDocument();
+    expect(within(compositeReport).getByText('综合评分')).toBeInTheDocument();
+    expect(within(compositeReport).getByText('62 / 100')).toBeInTheDocument();
+    expect(within(compositeReport).getByText('大盘复盘')).toBeInTheDocument();
+    expect(within(compositeReport).getByText('已完成')).toBeInTheDocument();
+    expect(within(compositeReport).getAllByText('600410')).toHaveLength(2);
+    expect(within(compositeReport).getByText('600519')).toBeInTheDocument();
+    expect(within(compositeReport).getByText('000858')).toBeInTheDocument();
+    expect(within(compositeReport).getByText('已开启')).toBeInTheDocument();
+    expect(within(compositeReport).getByText('报告语言')).toBeInTheDocument();
+    expect(within(compositeReport).getByText('中文')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '个股决策仪表盘' })).not.toBeInTheDocument();
+    expect(screen.queryByText('市场震荡。')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '重新分析' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '追问 AI' })).not.toBeInTheDocument();
+    expect(screen.queryByText('策略点位')).not.toBeInTheDocument();
+    expect(screen.queryByText('加入自选')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '重新运行综合分析' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '完整分析报告' })).toBeInTheDocument();
   });
 
   it('shows the empty report workspace when history is empty', async () => {

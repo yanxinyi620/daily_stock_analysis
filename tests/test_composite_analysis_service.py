@@ -76,6 +76,7 @@ def test_composite_success_persists_then_sends_once():
     assert result["status"] == "completed"
     assert result["history_id"] == 42
     database.save_analysis_history.assert_called_once()
+    assert database.save_analysis_history.call_args.kwargs["context_snapshot"]["notification_requested"] is True
     pipeline.notifier.send.assert_called_once()
     assert "大盘复盘" in pipeline.notifier.save_report_to_file.call_args.args[0]
     assert events[-1]["phase"] == "completed"

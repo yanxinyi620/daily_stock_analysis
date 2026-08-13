@@ -196,6 +196,7 @@ class CompositeAnalysisService:
                 "stock_codes": list(snapshot.stock_codes),
                 "failed_stocks": list(failures),
                 "market_review_status": market_status,
+                "notification_requested": snapshot.notify,
                 "report_path": report_path,
             },
         )

@@ -813,13 +813,18 @@ class HistoryService:
                 record_id=record_id
             )
 
-        if getattr(record, "report_type", None) == "market_review":
+        persisted_report_type = getattr(record, "report_type", None)
+        if persisted_report_type in {"market_review", "composite_analysis"}:
             markdown_report = self._extract_market_review_content(record, raw_result)
             if markdown_report:
                 return markdown_report
-            logger.error(f"get_markdown_report: market review report is empty for {record_id}")
+            logger.error(
+                "get_markdown_report: persisted %s report is empty for %s",
+                persisted_report_type,
+                record_id,
+            )
             raise MarkdownReportGenerationError(
-                f"market review report is empty for record {record_id}",
+                f"persisted {persisted_report_type} report is empty for record {record_id}",
                 record_id=record_id,
             )
 
