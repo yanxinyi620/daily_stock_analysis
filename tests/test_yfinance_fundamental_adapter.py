@@ -8,8 +8,8 @@ graceful degradation when yfinance is unavailable.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
 
 import pandas as pd
@@ -17,6 +17,14 @@ import pandas as pd
 from data_provider.yfinance_fundamental_adapter import (
     YfinanceFundamentalAdapter,
     _convert_to_yf_symbol,
+)
+
+
+_DIVIDEND_EVENT_DATES = (
+    "2025-08-11",
+    "2025-11-10",
+    "2026-02-09",
+    "2026-05-11",
 )
 
 
@@ -80,14 +88,6 @@ class TestYfinanceFundamentalAdapter(unittest.TestCase):
             "trailingAnnualDividendRate": 1.04,
             "dividendYield": 0.36,
         }
-        income_df = pd.DataFrame(
-            {
-                pd.Timestamp("2026-03-31"): {"Total Revenue": 1.11e11, "Net Income": 2.95e10},
-                pd.Timestamp("2025-12-31"): {"Total Revenue": 1.24e11, "Net Income": 3.62e10},
-                pd.Timestamp("2025-09-30"): {"Total Revenue": 9.49e10, "Net Income": 2.49e10},
-                pd.Timestamp("2025-06-30"): {"Total Revenue": 9.40e10, "Net Income": 2.34e10},
-            }
-        )
         # Need at least 5 columns to trigger statement-derived YoY.
         income_df_with_yoy = pd.DataFrame(
             {
@@ -107,7 +107,7 @@ class TestYfinanceFundamentalAdapter(unittest.TestCase):
         dividends = pd.Series(
             [0.26, 0.26, 0.26, 0.27],
             index=pd.DatetimeIndex(
-                ["2025-08-11", "2025-11-10", "2026-02-09", "2026-05-11"],
+                _DIVIDEND_EVENT_DATES,
                 tz="America/New_York",
             ),
             name="Dividends",
@@ -138,7 +138,6 @@ class TestYfinanceFundamentalAdapter(unittest.TestCase):
         self.assertAlmostEqual(div["ttm_dividend_yield_pct"], 0.3762, places=4)
         self.assertEqual(div["currency"], "USD")
         self.assertEqual(div["events"][0]["ex_dividend_date"], "2026-05-11")
-
         self.assertEqual(
             bundle["belong_boards"],
             [
@@ -153,7 +152,7 @@ class TestYfinanceFundamentalAdapter(unittest.TestCase):
         # is dropped, and TTM silently falls back to the annual-rate estimate — the real
         # bug seen on live US/HK/JP/KR/TW reports (24.0 / "0 次" instead of the true sum).
         idx = pd.DatetimeIndex(
-            ["2025-08-11", "2025-11-10", "2026-02-09", "2026-05-11"],
+            _DIVIDEND_EVENT_DATES,
             tz="America/New_York",
         )
         dividends_df = pd.DataFrame({"Dividends": [0.26, 0.26, 0.26, 0.27]}, index=idx)
@@ -176,7 +175,7 @@ class TestYfinanceFundamentalAdapter(unittest.TestCase):
 
     def test_ttm_dividend_window_uses_as_of_date_cutoff(self) -> None:
         idx = pd.DatetimeIndex(
-            ["2025-08-11", "2025-11-10", "2026-02-09", "2026-05-11"],
+            _DIVIDEND_EVENT_DATES,
             tz="America/New_York",
         )
         dividends = pd.Series([0.26, 0.26, 0.26, 0.27], index=idx, name="Dividends")
