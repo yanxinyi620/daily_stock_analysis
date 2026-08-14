@@ -7,6 +7,7 @@ import {
   RouteOutletBoundary,
   StandaloneRouteBoundary,
 } from './components/layout/RouteBoundary';
+import { MobileShell } from './components/mobile/MobileShell';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { UiLanguageProvider, useUiLanguage } from './contexts/UiLanguageContext';
 import { useAgentChatStore } from './stores/agentChatStore';
@@ -23,6 +24,13 @@ const DecisionSignalsPage = lazy(() => import('./pages/DecisionSignalsPage'));
 const AlertsPage = lazy(() => import('./pages/AlertsPage'));
 const TokenUsagePage = lazy(() => import('./pages/TokenUsagePage'));
 const StockScreeningPage = lazy(() => import('./pages/StockScreeningPage'));
+const MobileHomePage = lazy(() => import('./pages/mobile/MobileHomePage'));
+const MobileWatchlistPage = lazy(() => import('./pages/mobile/MobileWatchlistPage'));
+const MobileChatPage = lazy(() => import('./pages/mobile/MobileChatPage'));
+const MobileTasksPage = lazy(() => import('./pages/mobile/MobileTasksPage'));
+const MobileMePage = lazy(() => import('./pages/mobile/MobileMePage'));
+const MobileReportPage = lazy(() => import('./pages/mobile/MobileReportPage'));
+const MobileScreeningPage = lazy(() => import('./pages/mobile/MobileScreeningPage'));
 
 const AppContent: React.FC = () => {
   const location = useLocation();
@@ -72,6 +80,22 @@ const AppContent: React.FC = () => {
 
   return (
     <Routes>
+      <Route
+        element={(
+          <MobileShell>
+            <RouteOutletBoundary />
+          </MobileShell>
+        )}
+      >
+        <Route path="/m" element={<MobileHomePage />} />
+        <Route path="/m/watchlist" element={<MobileWatchlistPage />} />
+        <Route path="/m/chat" element={<MobileChatPage />} />
+        <Route path="/m/tasks" element={<MobileTasksPage />} />
+        <Route path="/m/me" element={<MobileMePage />} />
+        <Route path="/m/reports/:historyId" element={<MobileReportPage />} />
+        <Route path="/m/screening" element={<MobileScreeningPage />} />
+      </Route>
+      <Route path="/mobile" element={<Navigate to="/m" replace />} />
       <Route
         element={(
           <Shell>

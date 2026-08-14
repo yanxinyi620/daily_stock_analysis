@@ -1387,6 +1387,19 @@ Backtesting triggers automatically after the daily analysis flow completes (non-
 
 The WebUI and FastAPI API share the same service process. After startup, use the browser workspace for configuration management, manual analysis, task progress, historical reports, backtesting, portfolio management, and smart import. Authentication, cloud-server access, and API usage details are covered below.
 
+### Mobile daily companion
+
+Open `/m` on the same service from a phone (for example, `http://LAN-address:8000/m`). The mobile companion shares authentication, APIs, tasks, reports, watchlists, and Ask Stock sessions with the desktop WebUI; it does not create a separate business-data copy.
+
+- The five bottom entries are Home, Watchlist, Ask AI, Tasks, and Me.
+- Home submits stock analysis, composite watchlist analysis, market review, and stock screening. Its notification choice follows the desktop Home state.
+- Watchlist supports add, remove, single-stock analysis, analyze all, and analyze stocks without a report.
+- Tasks groups active, completed, and failed/cancelled work; completed work can open the mobile report.
+- Reports prioritize score, action, trend, risk, and summary. Full Markdown is fetched only when requested.
+- Me exposes daily links plus theme and UI language. Model channels, secrets, data sources, and notification targets remain desktop-only, and sensitive values are not shown on mobile.
+
+When supported, use “Add to Home Screen” to install the PWA. It provides a standalone window and app icon but deliberately does not cache APIs, tasks, or reports. Keep Web password authentication enabled on a LAN; for internet access, use an HTTPS reverse proxy or a trusted VPN instead of exposing port 8000 directly.
+
 ### FastAPI API Service
 
 FastAPI provides RESTful API service for configuration management and triggering analysis.
