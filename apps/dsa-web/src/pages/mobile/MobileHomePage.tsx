@@ -6,6 +6,7 @@ import { useMobileDashboard } from '../../hooks/useMobileDashboard';
 import { useStockPoolStore } from '../../stores/stockPoolStore';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import { groupMobileTasks } from '../../utils/mobileTask';
+import { findMatchingStockCode } from '../../utils/stockCode';
 import { MobileStockCard } from '../../components/mobile/MobileStockCard';
 import { MobileTaskCard } from '../../components/mobile/MobileTaskCard';
 
@@ -28,9 +29,9 @@ const MobileHomePage = () => {
 
   const actions = [
     { label: t('mobile.home.stockAnalysis'), icon: Search, action: () => stockCode.trim() ? run('stock', () => analysisApi.analyzeAsync({ stockCode: stockCode.trim(), reportType: 'full', notify })) : setMessage('请输入股票代码') },
-    { label: t('mobile.home.compositeAnalysis'), icon: Layers3, action: () => dashboard.watchlistCodes.length ? run('composite', () => analysisApi.triggerCompositeAnalysis({ stockCodes: dashboard.watchlistCodes, notify, reportType: 'full' })) : setMessage('请先添加自选股') },
-    { label: t('mobile.home.marketReview'), icon: BarChart3, action: () => run('market', () => analysisApi.triggerMarketReview({ sendNotification: notify })) },
     { label: t('mobile.home.screening'), icon: Radar, action: () => navigate('/m/screening') },
+    { label: t('mobile.home.marketReview'), icon: BarChart3, action: () => run('market', () => analysisApi.triggerMarketReview({ sendNotification: notify })) },
+    { label: t('mobile.home.compositeAnalysis'), icon: Layers3, action: () => dashboard.watchlistCodes.length ? run('composite', () => analysisApi.triggerCompositeAnalysis({ stockCodes: dashboard.watchlistCodes, notify, reportType: 'full' })) : setMessage('请先添加自选股') },
   ];
 
   return <section className="space-y-4" aria-labelledby="mobile-home-title">
@@ -45,8 +46,12 @@ const MobileHomePage = () => {
     </div>
     <div className="flex items-center justify-between"><h2 className="text-base font-black">{t('mobile.home.active')}</h2><span className="text-xs text-muted-text">{t('mobile.home.activeCount', { count: active.length })}</span></div>
     {active.length ? active.slice(0, 2).map(task => <MobileTaskCard key={task.taskId} task={task} reports={dashboard.recentReports} />) : <p className="rounded-2xl border border-dashed border-border p-4 text-sm text-muted-text">{t('mobile.home.noActive')}</p>}
-    <div className="flex items-center justify-between"><h2 className="text-base font-black">{t('mobile.home.recentReports')}</h2><span className="text-xs text-muted-text">{t('mobile.home.watchlistCount', { count: dashboard.watchlistCodes.length })}</span></div>
-    {dashboard.recentReports.slice(0, 5).map(report => <MobileStockCard key={report.id} stockCode={report.stockCode} stockName={report.stockName} summary={report.analysisSummary} reportId={report.id} />)}
+    <div className="flex items-center justify-between"><h2 className="text-base font-black">{t('mobile.home.watchlistStocks')}</h2><span className="text-xs text-muted-text">{t('mobile.home.watchlistCount', { count: dashboard.watchlistCodes.length })}</span></div>
+    {dashboard.watchlistCodes.slice(0, 5).map(stockCode => {
+      const stockReport = dashboard.stockReports.find(item => findMatchingStockCode([item.stockCode], stockCode));
+      const recentReport = dashboard.recentReports.find(item => findMatchingStockCode([item.stockCode], stockCode));
+      return <MobileStockCard key={stockCode} stockCode={stockCode} stockName={stockReport?.stockName ?? recentReport?.stockName} summary={stockReport?.operationAdvice ?? recentReport?.analysisSummary} reportId={stockReport?.id ?? recentReport?.id} />;
+    })}
   </section>;
 };
 export default MobileHomePage;
