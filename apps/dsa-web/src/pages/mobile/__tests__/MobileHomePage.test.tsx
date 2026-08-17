@@ -25,6 +25,7 @@ describe('MobileHomePage', () => {
       watchlistCodes: ['600519', '000858'],
       recentReports: [{ id: 7, queryId: 'q7', stockCode: '600519', stockName: '贵州茅台', analysisSummary: '趋势稳健', createdAt: '2026-08-13' }],
       stockReports: [],
+      historySummary: [{ id: 7, queryId: 'q7', stockCode: '600519', stockName: '贵州茅台', analysisSummary: '趋势稳健', createdAt: '2026-08-13' }],
       tasks: [{ taskId: 't1', stockCode: '000858', stockName: '五粮液', status: 'processing', progress: 45, reportType: 'full', createdAt: '2026-08-13' }],
       loading: false, stale: false, error: null, refresh: vi.fn(),
     });
@@ -39,7 +40,8 @@ describe('MobileHomePage', () => {
     expect(screen.getByText('五粮液')).toBeInTheDocument();
     expect(screen.getByText('贵州茅台')).toBeInTheDocument();
     expect(screen.getByText('1 项')).toBeInTheDocument();
-    expect(screen.getByText('自选 2')).toBeInTheDocument();
+    expect(screen.getByText('历史')).toBeInTheDocument();
+    expect(screen.getByText('1 条')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '个股分析' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '综合分析' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '大盘复盘' })).toBeInTheDocument();

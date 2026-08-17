@@ -22,7 +22,7 @@ describe('MobileWatchlistPage', () => {
       isInWatchlist: vi.fn(), addToWatchlist, removeFromWatchlist, toggleWatchlist: vi.fn(), refresh: vi.fn(),
     });
     vi.mocked(useMobileDashboard).mockReturnValue({
-      watchlistCodes: ['600519'], tasks: [], loading: false, stale: false, error: null, refresh: vi.fn(),
+      watchlistCodes: ['600519'], tasks: [], historySummary: [], loading: false, stale: false, error: null, refresh: vi.fn(),
       recentReports: [{ id: 12, queryId: 'q', stockCode: '600519.SH', stockName: '贵州茅台', analysisSummary: '基本面稳健，短期震荡', createdAt: '2026' }],
       stockReports: [{ id: 12, stockCode: '600519.SH', stockName: '贵州茅台', operationAdvice: '持有观察', analysisCount: 1 }],
     });
@@ -46,7 +46,7 @@ describe('MobileWatchlistPage', () => {
       isInWatchlist: vi.fn(), addToWatchlist: vi.fn(), removeFromWatchlist: vi.fn(), toggleWatchlist: vi.fn(), refresh: vi.fn(),
     });
     vi.mocked(useMobileDashboard).mockReturnValue({
-      watchlistCodes: ['600519', '000858'], tasks: [], loading: false, stale: false, error: null, refresh: vi.fn(),
+      watchlistCodes: ['600519', '000858'], tasks: [], historySummary: [], loading: false, stale: false, error: null, refresh: vi.fn(),
       recentReports: [],
       stockReports: [{ id: 12, stockCode: '600519', analysisCount: 1 }],
     });

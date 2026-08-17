@@ -6,8 +6,7 @@ import { useMobileDashboard } from '../../hooks/useMobileDashboard';
 import { useStockPoolStore } from '../../stores/stockPoolStore';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import { groupMobileTasks } from '../../utils/mobileTask';
-import { findMatchingStockCode } from '../../utils/stockCode';
-import { MobileStockCard } from '../../components/mobile/MobileStockCard';
+import { MobileHistoryCard } from '../../components/mobile/MobileHistoryCard';
 import { MobileTaskCard } from '../../components/mobile/MobileTaskCard';
 
 const MobileHomePage = () => {
@@ -46,12 +45,8 @@ const MobileHomePage = () => {
     </div>
     <div className="flex items-center justify-between"><h2 className="text-base font-black">{t('mobile.home.active')}</h2><span className="text-xs text-muted-text">{t('mobile.home.activeCount', { count: active.length })}</span></div>
     {active.length ? active.slice(0, 2).map(task => <MobileTaskCard key={task.taskId} task={task} reports={dashboard.recentReports} />) : <p className="rounded-2xl border border-dashed border-border p-4 text-sm text-muted-text">{t('mobile.home.noActive')}</p>}
-    <div className="flex items-center justify-between"><h2 className="text-base font-black">{t('mobile.home.watchlistStocks')}</h2><span className="text-xs text-muted-text">{t('mobile.home.watchlistCount', { count: dashboard.watchlistCodes.length })}</span></div>
-    {dashboard.watchlistCodes.slice(0, 5).map(stockCode => {
-      const stockReport = dashboard.stockReports.find(item => findMatchingStockCode([item.stockCode], stockCode));
-      const recentReport = dashboard.recentReports.find(item => findMatchingStockCode([item.stockCode], stockCode));
-      return <MobileStockCard key={stockCode} stockCode={stockCode} stockName={stockReport?.stockName ?? recentReport?.stockName} summary={stockReport?.operationAdvice ?? recentReport?.analysisSummary} reportId={stockReport?.id ?? recentReport?.id} />;
-    })}
+    <div className="flex items-center justify-between"><h2 className="text-base font-black">{t('mobile.home.history')}</h2><span className="text-xs text-muted-text">{t('mobile.home.historyCount', { count: dashboard.historySummary.length })}</span></div>
+    {dashboard.historySummary.length ? dashboard.historySummary.slice(0, 10).map(item => <MobileHistoryCard key={`${item.stockCode}-${item.id}`} item={item} />) : <p className="rounded-2xl border border-dashed border-border p-4 text-sm text-muted-text">{t('mobile.home.noHistory')}</p>}
   </section>;
 };
 export default MobileHomePage;

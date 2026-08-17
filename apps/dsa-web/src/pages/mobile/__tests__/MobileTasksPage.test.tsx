@@ -10,7 +10,7 @@ describe('MobileTasksPage', () => {
   it('groups task states, displays progress and errors, and refreshes', () => {
     const refresh = vi.fn();
     vi.mocked(useMobileDashboard).mockReturnValue({
-      watchlistCodes: [], recentReports: [], stockReports: [], loading: false, stale: false, error: null, refresh,
+      watchlistCodes: [], recentReports: [], stockReports: [], historySummary: [], loading: false, stale: false, error: null, refresh,
       tasks: [
         { taskId: 'a', stockCode: '600519', status: 'processing', progress: 42, reportType: 'full', createdAt: '2026' },
         { taskId: 'b', stockCode: '000858', status: 'completed', progress: 100, reportType: 'full', createdAt: '2026' },
