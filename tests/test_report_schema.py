@@ -289,6 +289,20 @@ class TestAnalyzerSchemaFallback(unittest.TestCase):
 }
 ```""")
 
+    def test_validate_json_response_accepts_unique_json_with_short_prose(self) -> None:
+        analyzer = GeminiAnalyzer.__new__(GeminiAnalyzer)
+        analyzer._config_override = SimpleNamespace(generation_backend="codex_cli")
+
+        analyzer._validate_json_response(
+            '分析结果如下：\n{"sentiment_score": 65, "trend_prediction": "看多"}\n以上。'
+        )
+
+    def test_stock_analysis_prompts_require_one_bare_json_object(self) -> None:
+        required_instruction = "只输出一个 JSON 对象，不要输出解释文字或 Markdown 代码围栏"
+
+        self.assertIn(required_instruction, GeminiAnalyzer.SYSTEM_PROMPT)
+        self.assertIn(required_instruction, GeminiAnalyzer.LEGACY_DEFAULT_SYSTEM_PROMPT)
+
     def test_validate_json_response_rejects_ambiguous_json_before_repair(self) -> None:
         analyzer = GeminiAnalyzer.__new__(GeminiAnalyzer)
         analyzer._config_override = SimpleNamespace(generation_backend="litellm")
@@ -298,17 +312,14 @@ class TestAnalyzerSchemaFallback(unittest.TestCase):
 
         self.assertEqual(getattr(context.exception, "details", {}).get("reason"), "ambiguous_json")
 
-    def test_validate_json_response_rejects_generic_fence_with_outside_text(self) -> None:
+    def test_validate_json_response_accepts_generic_fence_with_short_prose(self) -> None:
         analyzer = GeminiAnalyzer.__new__(GeminiAnalyzer)
         analyzer._config_override = SimpleNamespace(generation_backend="litellm")
 
-        with self.assertRaises(Exception) as context:
-            analyzer._validate_json_response("""Here is the JSON:
+        analyzer._validate_json_response("""Here is the JSON:
 ```
 {"sentiment_score": 70, "trend_prediction": "看多"}
 ```""")
-
-        self.assertEqual(getattr(context.exception, "details", {}).get("reason"), "ambiguous_json")
 
     def test_validate_json_response_rejects_multiple_json_fences(self) -> None:
         analyzer = GeminiAnalyzer.__new__(GeminiAnalyzer)

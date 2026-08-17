@@ -545,6 +545,13 @@ export interface DuplicateTaskError {
 // ============ History Types ============
 
 /** History item summary */
+export interface CompositeHistorySummary {
+  stockCodes: string[];
+  failedStocks: string[];
+  marketReviewStatus?: string | null;
+  notificationRequested?: boolean | null;
+}
+
 export interface HistoryItem {
   id: number;  // Record primary key ID, always present for persisted history items
   queryId: string;  // Linked analysis query ID
@@ -564,6 +571,7 @@ export interface HistoryItem {
   turnoverRate?: number;
   modelUsed?: string;  // 历史元数据快照，仅用于列表展示，不影响运行时调用与路由
   marketPhaseSummary?: MarketPhaseSummary | null;
+  compositeSummary?: CompositeHistorySummary | null;
   createdAt: string;
 }
 

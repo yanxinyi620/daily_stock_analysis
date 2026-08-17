@@ -334,6 +334,7 @@ class HistoryService:
             getattr(record, "context_snapshot", None),
         )
         action_fields = self._decision_action_fields_for_record(record, raw_result)
+        composite_summary = self._extract_composite_history_summary(record)
 
         return {
             "id": record.id,
@@ -353,7 +354,34 @@ class HistoryService:
             "model_used": normalize_model_used(model_used),
             "created_at": self._serialize_created_at(record.created_at),
             "market_phase_summary": market_phase_summary,
+            "composite_summary": composite_summary,
             **market_fields,
+        }
+
+    @staticmethod
+    def _extract_composite_history_summary(record) -> Optional[Dict[str, Any]]:
+        if getattr(record, "report_type", None) != "composite_analysis":
+            return None
+        snapshot = parse_json_field(getattr(record, "context_snapshot", None))
+        if not isinstance(snapshot, dict):
+            return None
+
+        def clean_codes(value: Any) -> List[str]:
+            if not isinstance(value, list):
+                return []
+            return [str(item).strip() for item in value if str(item).strip()]
+
+        market_status = snapshot.get("market_review_status")
+        notification_requested = snapshot.get("notification_requested")
+        return {
+            "stock_codes": clean_codes(snapshot.get("stock_codes")),
+            "failed_stocks": clean_codes(snapshot.get("failed_stocks")),
+            "market_review_status": (
+                str(market_status).strip() if market_status is not None else None
+            ),
+            "notification_requested": (
+                notification_requested if isinstance(notification_requested, bool) else None
+            ),
         }
 
     def _resolve_record(

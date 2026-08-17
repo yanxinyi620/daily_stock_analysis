@@ -90,6 +90,7 @@ Web setup: open **Settings → Agent → Ask-stock method**, choose **Codex loca
 - `opencode_cli` writes a minimal project `opencode.json` in the temporary cwd to disable sharing, autoupdate, snapshots, and common tool permissions, but OpenCode's resolved config may still include local global settings. Runtime safety also relies on `--pure`, the env denylist, prompt-file permissions, and the event extractor failing closed.
 - The Web settings page only exposes safe presets; it does not accept arbitrary command, argv, or shell strings.
 - `codex_cli` / `claude_code_cli` / `opencode_cli` remain experimental/limited. If your CLI version does not support the non-interactive output contract verified by this repository, DSA returns structured `capability_unsupported`, `cli_contract_unsupported`, `invalid_json`, `schema_validation_failed`, or the corresponding backend error, and falls back to `litellm` when backend fallback is configured. If that version-drift risk is unacceptable, keep `GENERATION_BACKEND=litellm`.
+- Stock analysis may extract one unique JSON object surrounded by a small amount of prose. Multiple JSON objects, multiple fences, non-object roots, and invalid core-field types still fail validation and trigger backend fallback; LiteLLM fallback logs identify the actual model and structured validation reason.
 - `opencode_cli` does not support OpenCode serve / web / ACP / MCP / attach / `--dangerously-skip-permissions`, and DSA never treats OpenCode final text as Agent tool success.
 
 ## Method 1: Simple Model Config (For Beginners)

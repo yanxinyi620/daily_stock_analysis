@@ -17,6 +17,15 @@ from api.v1.schemas.market_phase import MarketPhaseSummary
 from src.schemas.decision_action import DecisionAction
 
 
+class CompositeHistorySummary(BaseModel):
+    """综合分析历史列表使用的低敏运行摘要。"""
+
+    stock_codes: List[str] = Field(default_factory=list, description="本次股票快照")
+    failed_stocks: List[str] = Field(default_factory=list, description="失败股票代码")
+    market_review_status: Optional[str] = Field(None, description="大盘复盘状态")
+    notification_requested: Optional[bool] = Field(None, description="是否请求综合通知")
+
+
 class HistoryItem(BaseModel):
     """历史记录摘要（列表展示用）"""
 
@@ -49,6 +58,10 @@ class HistoryItem(BaseModel):
     market_phase_summary: Optional[MarketPhaseSummary] = Field(
         None,
         description="本次分析市场阶段低敏摘要",
+    )
+    composite_summary: Optional[CompositeHistorySummary] = Field(
+        None,
+        description="综合分析历史的低敏运行摘要",
     )
     created_at: Optional[str] = Field(None, description="创建时间")
     

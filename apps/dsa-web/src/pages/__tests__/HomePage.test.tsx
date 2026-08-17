@@ -377,12 +377,23 @@ describe('HomePage', () => {
     expect(within(compositeReport).getByText('中文')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: '个股决策仪表盘' })).not.toBeInTheDocument();
     expect(screen.queryByText('市场震荡。')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '重新分析' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '重新分析' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '追问 AI' })).not.toBeInTheDocument();
     expect(screen.queryByText('策略点位')).not.toBeInTheDocument();
     expect(screen.queryByText('加入自选')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '重新运行综合分析' })).toBeInTheDocument();
+    const historyButtons = screen.getAllByRole('button', { name: '历史记录' });
+    expect(historyButtons.length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByRole('button', { name: '历史趋势' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '完整分析报告' })).toBeInTheDocument();
+
+    fireEvent.click(historyButtons[historyButtons.length - 1]);
+    expect(await screen.findByRole('heading', { name: '综合分析历史' })).toBeInTheDocument();
+    expect(historyApi.getList).toHaveBeenCalledWith({
+      stockCode: 'COMPOSITE',
+      reportType: 'composite_analysis',
+      page: 1,
+      limit: 20,
+    });
   });
 
   it('shows the empty report workspace when history is empty', async () => {

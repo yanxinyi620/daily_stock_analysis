@@ -146,7 +146,7 @@ class CompositeAnalysisService:
                 query_id=task_id,
                 return_structured=True,
                 save_report_file=False,
-                persist_history=False,
+                persist_history=True,
                 trigger_source="api_composite",
             )
             market_report = str(getattr(review, "report", review) or "").strip()
@@ -185,6 +185,7 @@ class CompositeAnalysisService:
             analysis_summary=f"{len(results)} 支股票完成，{len(failures)} 支失败；大盘复盘{market_status}",
             raw_response=report,
             report_language=snapshot.report_language,
+            model_used=self._summarize_models(results),
         )
         history_id = self.database.save_analysis_history(
             synthetic,
@@ -260,6 +261,15 @@ class CompositeAnalysisService:
         if not results:
             return 0
         return round(sum(int(item.sentiment_score or 0) for item in results) / len(results))
+
+    @staticmethod
+    def _summarize_models(results: Sequence[AnalysisResult]) -> Optional[str]:
+        models = list(dict.fromkeys(
+            str(item.model_used).strip()
+            for item in results
+            if item.model_used and str(item.model_used).strip()
+        ))
+        return " / ".join(models) or None
 
     @staticmethod
     def _compose_report(

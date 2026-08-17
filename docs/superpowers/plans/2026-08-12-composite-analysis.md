@@ -65,9 +65,9 @@
 - [ ] Run `pytest -s tests/test_composite_analysis_service.py -q`; expect import failure.
 - [ ] Implement `CompositeAnalysisRequestSnapshot`, `CompositeRunResult`, and `CompositeAnalysisService.run(snapshot, task_id, progress_callback, cancel_requested)`.
 - [ ] Reuse `StockAnalysisPipeline.run(..., send_notification=False, merge_notification=True, batch_item_callback=...)`; collect successful `AnalysisResult` values and failed codes.
-- [ ] Reuse `build_market_review_runtime` / `run_market_review` with standalone file/history/notification disabled where supported, and extract merge markdown without duplicating market analysis logic.
+- [ ] Reuse `build_market_review_runtime` / `run_market_review` with standalone file/notification disabled but history persistence enabled, so a successful composite run creates a queryable `MARKET / market_review` child history without duplicating market analysis logic.
 - [ ] Compose `# 今日综合分析`, execution summary, optional market section, notifier-generated aggregate stock section, sanitized failure list, timestamp/model/disclaimer. Save `composite_analysis_<date>_<task-id-prefix>.md`.
-- [ ] Persist a synthetic `AnalysisResult(code="COMPOSITE", name="今日综合分析", ...)` through `DatabaseManager.save_analysis_history(..., report_type="composite_analysis", news_content=report, context_snapshot=...)`; require a positive history ID.
+- [ ] Persist a synthetic `AnalysisResult(code="COMPOSITE", name="今日综合分析", ...)` through `DatabaseManager.save_analysis_history(..., report_type="composite_analysis", news_content=report, context_snapshot=...)`; require a positive history ID. The final history set is one row per successful stock, one market-review row when that phase succeeds, and one composite row.
 - [ ] If `notify=True`, call notifier once with the saved report; map false/exception to notification failure without deleting history.
 - [ ] Run service tests; expect pass.
 - [ ] Commit with `feat: orchestrate composite analysis reports`.
@@ -139,3 +139,22 @@
 - [ ] Start the dev server and perform two real Web/API acceptance runs with three stocks: notify off (report saved, no send) and notify on (one combined send). Capture task phase transitions and verify `composite_analysis` history/detail.
 - [ ] Inspect `git diff --check`, `git status`, and the requirement checklist from the design spec.
 - [ ] Commit with `docs: document Web composite analysis` and a final implementation commit only if uncommitted verified changes remain.
+
+### Task 8: Add composite history browsing
+
+**Files:**
+- Modify: `src/services/history_service.py`
+- Modify: `api/v1/schemas/history.py`
+- Modify: `api/v1/endpoints/history.py`
+- Modify: `apps/dsa-web/src/types/analysis.ts`
+- Create: `apps/dsa-web/src/components/composite-analysis/CompositeHistoryView.tsx`
+- Create: `apps/dsa-web/src/components/composite-analysis/__tests__/CompositeHistoryView.test.tsx`
+- Modify: `apps/dsa-web/src/pages/HomePage.tsx`
+- Modify: `apps/dsa-web/src/pages/__tests__/HomePage.test.tsx`
+- Modify: `apps/dsa-web/src/i18n/uiText.ts`
+
+- [ ] Write failing backend tests asserting composite list records expose a sanitized `composite_summary`, while ordinary stock records do not.
+- [ ] Write failing component and Home page tests for the “重新分析 / 历史记录 / 完整分析报告” actions, loading/error/empty states, summary fields, pagination and selecting a prior report.
+- [ ] Add the list-only composite summary contract and typed Web mapping without exposing the full context snapshot.
+- [ ] Implement a dedicated composite history timeline; do not reuse stock price trend fields or request every report detail.
+- [ ] Update bilingual UI text, the full guide and changelog, then run focused backend tests, Web tests, lint and build.

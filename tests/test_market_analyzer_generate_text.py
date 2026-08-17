@@ -1485,6 +1485,36 @@ class TestAnalyzerGenerateText:
         assert text == '{"sentiment_score": 72}'
         assert model_used == "openai/MiniMax-M3"
 
+    def test_call_litellm_validation_log_names_actual_model_and_reason(self, caplog):
+        analyzer = self._make_analyzer()
+        analyzer._config_override.litellm_model = "deepseek/deepseek-v4-flash"
+        analyzer._config_override.litellm_fallback_models = []
+        analyzer._config_override.generation_backend = "codex_cli"
+        response = SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content='{"sentiment_score": 60} {"sentiment_score": 70}',
+                        content_blocks=None,
+                    )
+                )
+            ],
+            usage=None,
+        )
+
+        caplog.set_level("WARNING", logger="src.analyzer")
+        with patch.object(analyzer, "_dispatch_litellm_completion", return_value=response):
+            with pytest.raises(Exception):
+                analyzer._call_litellm_impl(
+                    "prompt",
+                    {"max_tokens": 128, "temperature": 0.2},
+                    response_validator=analyzer._validate_json_response,
+                )
+
+        assert "deepseek/deepseek-v4-flash validation failed" in caplog.text
+        assert "ambiguous_json" in caplog.text
+        assert "for backend codex_cli" not in caplog.text
+
     def test_call_litellm_minimax_strips_leading_think_wrapper(self):
         analyzer = self._make_analyzer()
         analyzer._config_override = SimpleNamespace(

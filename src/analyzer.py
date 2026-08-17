@@ -1893,6 +1893,7 @@ class GeminiAnalyzer:
 
 ## 输出格式：决策仪表盘 JSON
 
+最终响应只输出一个 JSON 对象，不要输出解释文字或 Markdown 代码围栏。
 请严格按照以下 JSON 格式输出，这是一个完整的【决策仪表盘】：
 
 ```json
@@ -2081,6 +2082,7 @@ class GeminiAnalyzer:
 
 ## 输出格式：决策仪表盘 JSON
 
+最终响应只输出一个 JSON 对象，不要输出解释文字或 Markdown 代码围栏。
 请严格按照以下 JSON 格式输出，这是一个完整的【决策仪表盘】：
 
 ```json
@@ -3306,7 +3308,15 @@ class GeminiAnalyzer:
 
             except Exception as e:
                 safe_error = self._sanitize_litellm_exception_text(e, config=config, model=model)
-                logger.warning("[LiteLLM] %s failed: %s", model, safe_error)
+                if isinstance(e, GenerationError) and e.stage == "validation":
+                    reason = str(e.details.get("reason") or e.error_code.value)
+                    logger.warning(
+                        "[LiteLLM] %s validation failed: %s",
+                        model,
+                        reason,
+                    )
+                else:
+                    logger.warning("[LiteLLM] %s failed: %s", model, safe_error)
                 last_error = RuntimeError(f"{type(e).__name__}: {safe_error}")
                 continue
 
@@ -4385,7 +4395,7 @@ class GeminiAnalyzer:
         if len(fenced_matches) == 1:
             match = fenced_matches[0]
             outside = (text[:match.start()] + text[match.end():]).strip()
-            if outside:
+            if "```" in outside or any(char in outside for char in "{}[]"):
                 raise ValueError("ambiguous_json")
             fence_lang = (match.group("lang") or "").strip().lower()
             if fence_lang not in {"", "json"}:
@@ -4399,10 +4409,50 @@ class GeminiAnalyzer:
         try:
             data = self._load_analysis_json_candidate(stripped)
         except json.JSONDecodeError as exc:
-            if self._contains_embedded_json_object(text):
-                raise ValueError("ambiguous_json") from exc
-            raise
+            candidate = self._extract_unique_embedded_json_object(text)
+            if candidate is None:
+                raise
+            return candidate
         return stripped, data
+
+    def _extract_unique_embedded_json_object(
+        self,
+        text: str,
+    ) -> Optional[Tuple[str, Dict[str, Any]]]:
+        """Return one top-level object surrounded only by non-JSON prose."""
+
+        decoder = json.JSONDecoder()
+        candidates: List[Tuple[int, int, str, Dict[str, Any]]] = []
+        for index, char in enumerate(text):
+            if char != "{":
+                continue
+            try:
+                value, end = decoder.raw_decode(text[index:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict):
+                candidates.append((index, index + end, text[index:index + end], value))
+
+        maximal = [
+            candidate
+            for candidate in candidates
+            if not any(
+                other[0] <= candidate[0]
+                and candidate[1] <= other[1]
+                and (other[0], other[1]) != (candidate[0], candidate[1])
+                for other in candidates
+            )
+        ]
+        if len(maximal) != 1:
+            if maximal:
+                raise ValueError("ambiguous_json")
+            return None
+
+        start, end, json_str, data = maximal[0]
+        outside = (text[:start] + text[end:]).strip()
+        if "```" in outside or any(char in outside for char in "{}[]"):
+            raise ValueError("ambiguous_json")
+        return json_str, data
 
     def _load_analysis_json_candidate(self, json_str: str) -> Dict[str, Any]:
         """Parse one already-selected JSON candidate, repairing common LLM JSON drift."""
@@ -4424,24 +4474,6 @@ class GeminiAnalyzer:
         if not isinstance(data, dict):
             raise TypeError("json_root_not_object")
         return data
-
-    @staticmethod
-    def _contains_embedded_json_object(text: str) -> bool:
-        decoder = json.JSONDecoder()
-        count = 0
-        for index, char in enumerate(text):
-            if char != "{":
-                continue
-            try:
-                _obj, end = decoder.raw_decode(text[index:])
-            except json.JSONDecodeError:
-                continue
-            count += 1
-            before = text[:index].strip()
-            after = text[index + end:].strip()
-            if count > 1 or before or after:
-                return True
-        return False
 
     def _validate_analysis_minimal_contract(self, data: Dict[str, Any]) -> None:
         try:

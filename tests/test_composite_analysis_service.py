@@ -16,6 +16,7 @@ def _result(code: str) -> AnalysisResult:
         trend_prediction="震荡",
         operation_advice="观望",
         analysis_summary="摘要",
+        model_used="codex_cli",
     )
 
 
@@ -75,7 +76,13 @@ def test_composite_success_persists_then_sends_once():
 
     assert result["status"] == "completed"
     assert result["history_id"] == 42
+    market_call = service.market_review_runner.call_args.kwargs
+    assert market_call["persist_history"] is True
+    assert market_call["send_notification"] is False
+    assert market_call["query_id"] == "abc123456"
+    assert market_call["trigger_source"] == "api_composite"
     database.save_analysis_history.assert_called_once()
+    assert database.save_analysis_history.call_args.args[0].model_used == "codex_cli"
     assert database.save_analysis_history.call_args.kwargs["context_snapshot"]["notification_requested"] is True
     pipeline.notifier.send.assert_called_once()
     assert "大盘复盘" in pipeline.notifier.save_report_to_file.call_args.args[0]
