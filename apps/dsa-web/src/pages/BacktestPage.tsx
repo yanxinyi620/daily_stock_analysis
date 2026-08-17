@@ -21,6 +21,8 @@ import type {
   BacktestRunResponse,
   PerformanceMetrics,
   BacktestPhaseFilter,
+  BacktestRunHistoryItem,
+  BacktestRunRequest,
 } from '../types/backtest';
 import { buildDecisionActionLabelMap, getDecisionActionLabel } from '../utils/decisionAction';
 import { getMarketPhaseSummaryLabel } from '../utils/marketPhase';
@@ -265,6 +267,9 @@ const BacktestPage: React.FC = () => {
   const [runResult, setRunResult] = useState<BacktestRunResponse | null>(null);
   const [runError, setRunError] = useState<ParsedApiError | null>(null);
   const [pageError, setPageError] = useState<ParsedApiError | null>(null);
+  const [contentView, setContentView] = useState<'results' | 'runs'>('results');
+  const [runHistory, setRunHistory] = useState<BacktestRunHistoryItem[]>([]);
+  const [isLoadingRuns, setIsLoadingRuns] = useState(false);
 
   // Results state
   const [results, setResults] = useState<BacktestResultItem[]>([]);
@@ -280,6 +285,18 @@ const BacktestPage: React.FC = () => {
   const effectiveWindowDays = parseEvalWindowDays(evalDays) ?? overallPerf?.evalWindowDays;
   const isNextDayValidation = effectiveWindowDays === 1;
   const showNextDayActualColumns = isNextDayValidation;
+
+  const fetchRunHistory = useCallback(async () => {
+    setIsLoadingRuns(true);
+    try {
+      const response = await backtestApi.getRuns({ page: 1, limit: 20 });
+      setRunHistory(response.items);
+    } catch (err) {
+      setPageError(getParsedApiError(err));
+    } finally {
+      setIsLoadingRuns(false);
+    }
+  }, []);
 
   // Fetch results
   const fetchResults = useCallback(async (
@@ -353,55 +370,106 @@ const BacktestPage: React.FC = () => {
 
   // Initial load — fetch performance first, then filter results by its window
   useEffect(() => {
+    let cancelled = false;
     const init = async () => {
       // Get latest performance (unfiltered returns most recent summary)
       const overall = await backtestApi.getOverallPerformance();
+      if (cancelled) return;
       setOverallPerf(overall);
       // Use the summary's eval_window_days to filter results consistently
       const windowDays = overall?.evalWindowDays;
       if (windowDays && !evalDays) {
         setEvalDays(String(windowDays));
       }
-      fetchResults(1, undefined, windowDays, undefined, undefined, 'all');
+      await fetchResults(1, undefined, windowDays, undefined, undefined, 'all');
+
+      let activeTask;
+      try {
+        activeTask = await backtestApi.getCurrentTask();
+      } catch (err) {
+        console.warn('Failed to restore active backtest task:', err);
+        return;
+      }
+      if (cancelled || !activeTask) return;
+
+      setIsRunning(true);
+      setRunResult(null);
+      setRunError(null);
+      try {
+        const response = await backtestApi.waitForTask(activeTask.taskId);
+        if (cancelled) return;
+        setRunResult(response);
+        const effectiveEvalWindowDays = response.appliedEvalWindowDays ?? windowDays;
+        if (effectiveEvalWindowDays != null) {
+          setEvalDays(String(effectiveEvalWindowDays));
+        }
+        await Promise.all([
+          fetchResults(1, undefined, effectiveEvalWindowDays, undefined, undefined, 'all'),
+          fetchPerformance(undefined, effectiveEvalWindowDays, undefined, undefined, 'all'),
+        ]);
+      } catch (err) {
+        if (!cancelled) setRunError(getParsedApiError(err));
+      } finally {
+        if (!cancelled) setIsRunning(false);
+      }
     };
-    init();
+    void init();
+    return () => {
+      cancelled = true;
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Run backtest
-  const handleRun = async () => {
+  const executeRun = async (params: BacktestRunRequest) => {
     setIsRunning(true);
     setRunResult(null);
     setRunError(null);
     try {
-      const code = normalizeBacktestCode(codeFilter);
-      const requestedEvalWindowDays = parseEvalWindowDays(evalDays);
-      const dateFrom = analysisDateFrom || undefined;
-      const dateTo = analysisDateTo || undefined;
-      const response = await backtestApi.run({
-        code,
-        force: forceRerun || undefined,
-        minAgeDays: forceRerun ? 0 : undefined,
-        evalWindowDays: requestedEvalWindowDays,
-        analysisDateFrom: dateFrom,
-        analysisDateTo: dateTo,
-      });
+      const response = await backtestApi.run(params);
       setRunResult(response);
       const effectiveEvalWindowDays =
         response.appliedEvalWindowDays
-        ?? requestedEvalWindowDays
+        ?? params.evalWindowDays
         ?? parseEvalWindowDays(evalDays)
         ?? overallPerf?.evalWindowDays;
       if (effectiveEvalWindowDays != null) {
         setEvalDays(String(effectiveEvalWindowDays));
       }
       // Refresh data with same eval_window_days
-      fetchResults(1, code, effectiveEvalWindowDays, dateFrom, dateTo, phaseFilter);
-      fetchPerformance(code, effectiveEvalWindowDays, dateFrom, dateTo, phaseFilter);
+      fetchResults(1, params.code, effectiveEvalWindowDays, params.analysisDateFrom, params.analysisDateTo, phaseFilter);
+      fetchPerformance(params.code, effectiveEvalWindowDays, params.analysisDateFrom, params.analysisDateTo, phaseFilter);
+      void fetchRunHistory();
     } catch (err) {
       setRunError(getParsedApiError(err));
     } finally {
       setIsRunning(false);
     }
+  };
+
+  // Run backtest
+  const handleRun = async () => executeRun({
+    code: normalizeBacktestCode(codeFilter),
+    force: forceRerun || undefined,
+    minAgeDays: forceRerun ? 0 : undefined,
+    evalWindowDays: parseEvalWindowDays(evalDays),
+    analysisDateFrom: analysisDateFrom || undefined,
+    analysisDateTo: analysisDateTo || undefined,
+  });
+
+  const handleRerun = async (run: BacktestRunHistoryItem) => {
+    setCodeFilter(run.code || '');
+    setEvalDays(run.evalWindowDays != null ? String(run.evalWindowDays) : '');
+    setForceRerun(run.force);
+    setAnalysisDateFrom(run.analysisDateFrom || '');
+    setAnalysisDateTo(run.analysisDateTo || '');
+    await executeRun({
+      code: run.code || undefined,
+      force: run.force || undefined,
+      minAgeDays: run.minAgeDays ?? undefined,
+      evalWindowDays: run.evalWindowDays ?? undefined,
+      analysisDateFrom: run.analysisDateFrom || undefined,
+      analysisDateTo: run.analysisDateTo || undefined,
+      limit: run.limit,
+    });
   };
 
   // Filter by code
@@ -558,6 +626,29 @@ const BacktestPage: React.FC = () => {
             ? text.oneDayModeDescription
             : text.windowModeDescription}
         </p>
+        <div className="mt-3 flex gap-2" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={contentView === 'results'}
+            className={`backtest-force-btn ${contentView === 'results' ? 'active' : ''}`}
+            onClick={() => setContentView('results')}
+          >
+            {language === 'zh' ? '回测结果' : 'Backtest results'}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={contentView === 'runs'}
+            className={`backtest-force-btn ${contentView === 'runs' ? 'active' : ''}`}
+            onClick={() => {
+              setContentView('runs');
+              void fetchRunHistory();
+            }}
+          >
+            {language === 'zh' ? '运行历史' : 'Run history'}
+          </button>
+        </div>
       </header>
 
       {/* Main content */}
@@ -585,6 +676,50 @@ const BacktestPage: React.FC = () => {
 
         {/* Right content - Results table */}
         <section className="min-h-0 flex-1 overflow-y-auto">
+          {contentView === 'runs' ? (
+            <div className="space-y-3">
+              {isLoadingRuns ? <div className="backtest-spinner md mx-auto mt-16" /> : null}
+              {!isLoadingRuns && runHistory.length === 0 ? (
+                <EmptyState
+                  title={language === 'zh' ? '暂无运行历史' : 'No run history'}
+                  description={language === 'zh' ? '下一次运行回测后会在这里保存任务参数和结果摘要。' : 'The next backtest will save its parameters and summary here.'}
+                />
+              ) : null}
+              {runHistory.map((run) => (
+                <Card key={run.runId} padding="md" className="animate-fade-in">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-sm text-foreground">{run.runId}</span>
+                        <Badge variant={run.status === 'completed' ? 'success' : run.status === 'failed' ? 'danger' : 'warning'}>
+                          {run.status}
+                        </Badge>
+                      </div>
+                      <div className="text-xs text-secondary-text">
+                        {new Date(run.createdAt).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US')}
+                        {' · '}{run.code || (language === 'zh' ? '全部股票' : 'All stocks')}
+                        {' · '}{run.evalWindowDays ?? '--'} {language === 'zh' ? '日窗口' : 'day window'}
+                        {run.force ? ` · ${language === 'zh' ? '强制重跑' : 'Force rerun'}` : ''}
+                      </div>
+                      <div className="text-xs text-muted-text">
+                        {language === 'zh' ? '处理 / 保存 / 完成 / 不足 / 错误' : 'Processed / Saved / Completed / Insufficient / Errors'}:
+                        {' '}{run.processed ?? '--'} / {run.saved ?? '--'} / {run.completed ?? '--'} / {run.insufficient ?? '--'} / {run.errors ?? '--'}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-secondary whitespace-nowrap"
+                      disabled={isRunning}
+                      onClick={() => void handleRerun(run)}
+                    >
+                      {language === 'zh' ? '按相同参数重新运行' : 'Rerun with same parameters'}
+                    </button>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          ) : (
+          <>
           {pageError ? (
             <ApiErrorAlert error={pageError} className="mb-3" />
           ) : null}
@@ -718,6 +853,8 @@ const BacktestPage: React.FC = () => {
                 {formatUiText(text.totalPage, { total: totalResults, page: currentPage, pages: Math.max(totalPages, 1) })}
               </p>
             </div>
+          )}
+          </>
           )}
         </section>
       </main>

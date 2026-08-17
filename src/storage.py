@@ -458,6 +458,40 @@ class BacktestResult(Base):
     )
 
 
+class BacktestRun(Base):
+    """One task-level backtest execution record."""
+
+    __tablename__ = 'backtest_runs'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(String(64), nullable=False, unique=True, index=True)
+    task_id = Column(String(64), index=True)
+    source = Column(String(24), nullable=False, default='web', index=True)
+    status = Column(String(24), nullable=False, default='pending', index=True)
+    code = Column(String(16), index=True)
+    force = Column(Boolean, nullable=False, default=False)
+    eval_window_days = Column(Integer)
+    min_age_days = Column(Integer)
+    analysis_date_from = Column(Date)
+    analysis_date_to = Column(Date)
+    result_limit = Column(Integer, nullable=False, default=200)
+    created_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    processed_count = Column(Integer)
+    saved_count = Column(Integer)
+    completed_count = Column(Integer)
+    insufficient_count = Column(Integer)
+    errors_count = Column(Integer)
+    message = Column(Text)
+    diagnostics_json = Column(Text)
+    error = Column(Text)
+
+    __table_args__ = (
+        Index('ix_backtest_run_status_created', 'status', 'created_at'),
+    )
+
+
 class BacktestSummary(Base):
     """回测汇总指标（按股票或全局）。"""
 
