@@ -552,6 +552,11 @@ export interface CompositeHistorySummary {
   notificationRequested?: boolean | null;
 }
 
+export interface HistoryDataQualitySummary {
+  overallScore?: number | null;
+  level?: 'good' | 'usable' | 'limited' | 'poor' | string | null;
+}
+
 export interface HistoryItem {
   id: number;  // Record primary key ID, always present for persisted history items
   queryId: string;  // Linked analysis query ID
@@ -572,6 +577,7 @@ export interface HistoryItem {
   modelUsed?: string;  // 历史元数据快照，仅用于列表展示，不影响运行时调用与路由
   marketPhaseSummary?: MarketPhaseSummary | null;
   compositeSummary?: CompositeHistorySummary | null;
+  dataQuality?: HistoryDataQualitySummary | null;
   createdAt: string;
 }
 

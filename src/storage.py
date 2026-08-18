@@ -2672,7 +2672,8 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
         offset: int = 0,
-        limit: int = 20
+        limit: int = 20,
+        exclude_trigger_source: Optional[str] = None,
     ) -> Tuple[List[AnalysisHistory], int]:
         """
         分页查询分析历史记录（带总数）
@@ -2702,6 +2703,12 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                     conditions.append(AnalysisHistory.code == code)
             if report_type:
                 conditions.append(AnalysisHistory.report_type == report_type)
+            if exclude_trigger_source:
+                # context_snapshot is persisted JSON text; keep internal auto-context
+                # records out of user-facing history lists without deleting them.
+                conditions.append(
+                    ~AnalysisHistory.context_snapshot.like(f"%{exclude_trigger_source}%")
+                )
             if start_date:
                 # created_at >= start_date 00:00:00
                 conditions.append(AnalysisHistory.created_at >= datetime.combine(start_date, datetime.min.time()))

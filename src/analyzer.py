@@ -3396,6 +3396,7 @@ class GeminiAnalyzer:
             )
             if isinstance(result, tuple):
                 text, model_used, usage = result
+                self.last_model_used = model_used
                 if should_persist_usage_telemetry(usage):
                     persist_llm_usage(usage, model_used, call_type="market_review")
                 return text

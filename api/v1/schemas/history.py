@@ -26,6 +26,13 @@ class CompositeHistorySummary(BaseModel):
     notification_requested: Optional[bool] = Field(None, description="是否请求综合通知")
 
 
+class HistoryDataQualitySummary(BaseModel):
+    """历史记录列表使用的低敏数据质量摘要。"""
+
+    overall_score: Optional[int] = Field(None, ge=0, le=100, description="输入数据质量总分")
+    level: Optional[Literal["good", "usable", "limited", "poor"]] = Field(None, description="输入数据质量等级")
+
+
 class HistoryItem(BaseModel):
     """历史记录摘要（列表展示用）"""
 
@@ -62,6 +69,10 @@ class HistoryItem(BaseModel):
     composite_summary: Optional[CompositeHistorySummary] = Field(
         None,
         description="综合分析历史的低敏运行摘要",
+    )
+    data_quality: Optional[HistoryDataQualitySummary] = Field(
+        None,
+        description="本次分析输入数据质量低敏摘要",
     )
     created_at: Optional[str] = Field(None, description="创建时间")
     

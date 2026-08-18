@@ -1437,6 +1437,14 @@ const HomePage: React.FC = () => {
     };
 
     return [marketReviewItem, ...stockItems].sort((left, right) => {
+      // 固定系统级记录在顶部；普通个股继续沿用原有的最近分析时间排序。
+      const rank = (item: StockBarItem) => item.reportType === 'composite_analysis'
+        ? 0
+        : item.reportType === 'market_review' || item.stockCode === 'MARKET'
+          ? 1
+          : 2;
+      const rankDiff = rank(left) - rank(right);
+      if (rankDiff !== 0) return rankDiff;
       const leftTime = left.lastAnalysisTime ? Date.parse(left.lastAnalysisTime) : 0;
       const rightTime = right.lastAnalysisTime ? Date.parse(right.lastAnalysisTime) : 0;
       return rightTime - leftTime;

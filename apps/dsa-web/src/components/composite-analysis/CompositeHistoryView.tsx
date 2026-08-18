@@ -91,7 +91,9 @@ export const CompositeHistoryView: React.FC<CompositeHistoryViewProps> = ({
                       {selected ? <Badge variant="info">{t('compositeHistory.current')}</Badge> : null}
                     </div>
                     <p className="mt-2 text-xs text-muted-text">{t('compositeHistory.model')}</p>
-                    <p className="mt-0.5 truncate text-sm text-secondary-text">{item.modelUsed || '--'}</p>
+                    <p className="mt-0.5 truncate text-sm text-secondary-text" title={item.modelUsed || t('compositeHistory.modelUnknown')}>
+                      {item.modelUsed || t('compositeHistory.modelUnknown')}
+                    </p>
                   </div>
 
                   <div className="min-w-0 space-y-2.5">

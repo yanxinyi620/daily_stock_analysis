@@ -12,6 +12,7 @@ Responsibilities:
 from __future__ import annotations
 import json
 import logging
+import re
 from datetime import date, datetime, timedelta
 from typing import Optional, Dict, Any, List, Tuple, TYPE_CHECKING
 
@@ -61,6 +62,43 @@ if TYPE_CHECKING:
     from src.analyzer import AnalysisResult
 
 logger = logging.getLogger(__name__)
+
+
+_MARKET_REVIEW_SIGNAL_RE = re.compile(
+    r"(?:盘面信号|市场信号|market\s+signal|market\s+sentiment)"
+    r"[*_]*\s*[:：]?\s*(\d{1,3})\s*/\s*100",
+    re.IGNORECASE,
+)
+
+
+def _market_review_signal_score(record: Any, raw_result: Any, context_snapshot: Any) -> Optional[int]:
+    """Read the real signal score for market reviews, including legacy rows."""
+    if getattr(record, "report_type", None) != "market_review":
+        return None
+    texts: List[str] = []
+    if isinstance(raw_result, dict):
+        for key in ("raw_response", "market_review_report", "news_summary"):
+            if isinstance(raw_result.get(key), str):
+                texts.append(raw_result[key])
+    if isinstance(context_snapshot, dict):
+        payload = context_snapshot.get("market_review_payload")
+        if isinstance(payload, dict):
+            sections = payload.get("sections")
+            if isinstance(sections, list):
+                texts.extend(
+                    section.get("markdown", "")
+                    for section in sections
+                    if isinstance(section, dict) and isinstance(section.get("markdown"), str)
+                )
+    if isinstance(getattr(record, "news_content", None), str):
+        texts.append(record.news_content)
+    for text in texts:
+        match = _MARKET_REVIEW_SIGNAL_RE.search(text)
+        if match:
+            score = int(match.group(1))
+            if 0 <= score <= 100:
+                return score
+    return getattr(record, "sentiment_score", None)
 
 
 class MarkdownReportGenerationError(Exception):
@@ -224,7 +262,10 @@ class HistoryService:
                 start_date=start_dt,
                 end_date=end_dt,
                 offset=offset,
-                limit=limit
+                limit=limit,
+                exclude_trigger_source=(
+                    "daily_market_context" if report_type == "market_review" else None
+                ),
             )
             
             # Convert to response format
@@ -309,6 +350,26 @@ class HistoryService:
         )
 
     @staticmethod
+    def _extract_history_data_quality(context_snapshot: Any) -> Optional[Dict[str, Any]]:
+        snapshot = parse_json_field(context_snapshot)
+        if not isinstance(snapshot, dict):
+            return None
+        overview = snapshot.get("analysis_context_pack_overview")
+        quality = overview.get("data_quality") if isinstance(overview, dict) else None
+        if not isinstance(quality, dict):
+            return None
+        score = quality.get("overall_score")
+        try:
+            score = int(score) if score is not None else None
+        except (TypeError, ValueError):
+            score = None
+        level = quality.get("level")
+        level = str(level).strip() if level else None
+        if score is None and not level:
+            return None
+        return {"overall_score": score, "level": level}
+
+    @staticmethod
     def _extract_market_review_region(context_snapshot: Any) -> Optional[str]:
         snapshot = parse_json_field(context_snapshot)
         if not isinstance(snapshot, dict):
@@ -322,6 +383,19 @@ class HistoryService:
         normalized = region.strip() if isinstance(region, str) else ""
         return normalized or None
 
+    @staticmethod
+    def _extract_market_review_label(context_snapshot: Any) -> Optional[str]:
+        snapshot = parse_json_field(context_snapshot)
+        if not isinstance(snapshot, dict):
+            return None
+        snapshots = snapshot.get("market_light_snapshots")
+        if not isinstance(snapshots, dict):
+            return None
+        region = snapshot.get("market_review_region")
+        light = snapshots.get(region) if isinstance(region, str) else None
+        label = light.get("temperature_label") or light.get("label") if isinstance(light, dict) else None
+        return str(label).strip() if label else None
+
     def _record_to_list_item_dict(self, record) -> Dict[str, Any]:
         raw_result = parse_json_field(getattr(record, "raw_result", None))
         model_used = raw_result.get("model_used") if isinstance(raw_result, dict) else None
@@ -329,12 +403,20 @@ class HistoryService:
         market_fields = self._extract_history_market_fields(
             getattr(record, "context_snapshot", None)
         )
+        context_snapshot = parse_json_field(getattr(record, "context_snapshot", None))
+        sentiment_score = (
+            _market_review_signal_score(record, raw_result, context_snapshot)
+            if getattr(record, "report_type", None) == "market_review"
+            else getattr(record, "sentiment_score", None)
+        )
         market_phase_summary = self._display_market_phase_summary(
             record.code,
             getattr(record, "context_snapshot", None),
         )
         action_fields = self._decision_action_fields_for_record(record, raw_result)
         composite_summary = self._extract_composite_history_summary(record)
+        data_quality = self._extract_history_data_quality(context_snapshot)
+        market_review_label = self._extract_market_review_label(context_snapshot)
 
         return {
             "id": record.id,
@@ -347,14 +429,15 @@ class HistoryService:
             ),
             "trend_prediction": record.trend_prediction,
             "analysis_summary": record.analysis_summary,
-            "sentiment_score": record.sentiment_score,
-            "operation_advice": record.operation_advice,
+            "sentiment_score": sentiment_score,
+            "operation_advice": market_review_label or record.operation_advice,
             "action": action_fields["action"],
             "action_label": action_fields["action_label"],
             "model_used": normalize_model_used(model_used),
             "created_at": self._serialize_created_at(record.created_at),
             "market_phase_summary": market_phase_summary,
             "composite_summary": composite_summary,
+            "data_quality": data_quality,
             **market_fields,
         }
 
@@ -636,8 +719,14 @@ class HistoryService:
             "action": action_fields["action"],
             "action_label": action_fields["action_label"],
             "trend_prediction": record.trend_prediction,
-            "sentiment_score": record.sentiment_score,
-            "sentiment_label": self._get_sentiment_label(record.sentiment_score or 50),
+            "sentiment_score": _market_review_signal_score(record, raw_result, context_snapshot)
+            if getattr(record, "report_type", None) == "market_review"
+            else record.sentiment_score,
+            "sentiment_label": self._get_sentiment_label(
+                (_market_review_signal_score(record, raw_result, context_snapshot)
+                 if getattr(record, "report_type", None) == "market_review"
+                 else record.sentiment_score) or 50
+            ),
             "ideal_buy": sniper_points.get("ideal_buy"),
             "secondary_buy": sniper_points.get("secondary_buy"),
             "stop_loss": sniper_points.get("stop_loss"),
