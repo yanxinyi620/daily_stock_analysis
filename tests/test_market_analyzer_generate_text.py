@@ -414,6 +414,61 @@ class TestAnalyzerGenerateText:
         assert result.success is True
         mock_persist.assert_not_called()
 
+    def test_analyze_logs_actual_success_model_after_backend_fallback(self, caplog):
+        analyzer = self._make_analyzer()
+        analyzer._config_override = SimpleNamespace(
+            generation_backend="codex_cli",
+            generation_fallback_backend="litellm",
+            litellm_model="deepseek/deepseek-v4-flash",
+            litellm_fallback_models=["deepseek/deepseek-v4-pro"],
+            llm_model_list=[],
+            gemini_request_delay=0,
+            report_language="zh",
+            llm_temperature=0.7,
+            report_integrity_enabled=False,
+            report_integrity_retry=0,
+        )
+        response_text = json.dumps({
+            "sentiment_score": 56,
+            "trend_prediction": "震荡",
+            "operation_advice": "观望",
+            "analysis_summary": "测试",
+        })
+
+        with (
+            patch.object(analyzer, "get_generation_backend_config_error", return_value=None),
+            patch.object(analyzer, "is_available", return_value=True),
+            patch.object(analyzer, "_get_analysis_system_prompt", return_value="system"),
+            patch.object(analyzer, "_get_skill_prompt_sections", return_value=(None, None, True)),
+            patch.object(analyzer, "_format_prompt", return_value="prompt"),
+            patch.object(
+                analyzer,
+                "_call_litellm",
+                return_value=(
+                    response_text,
+                    "deepseek/deepseek-v4-pro",
+                    {"transport": "litellm", "total_tokens": 3},
+                ),
+            ),
+            patch.object(analyzer, "_build_market_snapshot", return_value={}),
+            patch("src.analyzer.persist_llm_usage") as persist_llm_usage,
+            caplog.at_level("INFO", logger="src.analyzer"),
+        ):
+            analyzer.analyze({"code": "600410", "stock_name": "华胜天成"})
+
+        assert "[LLM返回] deepseek/deepseek-v4-pro 响应成功" in caplog.text
+        assert "[LLM返回] codex_cli 响应成功" not in caplog.text
+        persisted_usage, persisted_model = persist_llm_usage.call_args.args[:2]
+        assert persisted_model == "deepseek/deepseek-v4-pro"
+        assert persisted_usage["transport"] == "litellm"
+
+    def test_generation_backend_id_reports_configured_local_cli(self):
+        analyzer = self._make_analyzer()
+        analyzer._config_override.generation_backend = "codex_cli"
+        analyzer._config_override.generation_fallback_backend = "litellm"
+
+        assert analyzer.get_generation_backend_id() == "codex_cli"
+
     def test_generate_text_returns_none_on_failure(self):
         analyzer = self._make_analyzer()
         with patch.object(analyzer, "_call_litellm", side_effect=Exception("LLM error")):
@@ -2501,6 +2556,160 @@ class TestAnalyzerGenerateText:
         assert len(dispatch_calls) == 2, "fallback model should be tried after primary JSON failure"
         assert "fallback" in model_used
         assert valid_json == text
+
+    def test_backend_fallback_records_primary_failure_and_uses_litellm_transport(self):
+        from src.llm.generation_backend import (
+            GenerationError,
+            GenerationErrorCode,
+            GenerationResult,
+        )
+
+        analyzer = self._make_analyzer()
+        analyzer._config_override.generation_backend = "codex_cli"
+        analyzer._config_override.generation_fallback_backend = "litellm"
+        primary = MagicMock()
+        primary.generate.side_effect = GenerationError(
+            error_code=GenerationErrorCode.INVALID_JSON,
+            stage="validation",
+            retryable=True,
+            fallbackable=True,
+            backend="codex_cli",
+            provider="codex_cli",
+            details={"reason": "ambiguous_json"},
+        )
+        fallback = MagicMock()
+        fallback.generate.return_value = GenerationResult(
+            text='{"sentiment_score": 56}',
+            model="deepseek/deepseek-v4-pro",
+            provider="deepseek",
+            backend="litellm",
+            usage={"transport": "litellm", "total_tokens": 12},
+        )
+
+        with (
+            patch.object(analyzer, "get_generation_backend_config_error", return_value=None),
+            patch.object(
+                analyzer,
+                "_get_generation_backend",
+                side_effect=lambda backend_id: primary if backend_id == "codex_cli" else fallback,
+            ),
+            patch("src.analyzer.record_llm_run", create=True) as record_llm_run,
+        ):
+            _text, model_used, usage = analyzer._call_litellm(
+                "prompt",
+                {"max_tokens": 128},
+                audit_context={"call_type": "analysis", "transport": "codex_cli"},
+            )
+
+        record_llm_run.assert_called_once_with(
+            success=False,
+            provider="codex_cli",
+            model="codex_cli",
+            call_type="analysis",
+            error_type="invalid_json",
+            error_message="ambiguous_json",
+        )
+        assert model_used == "deepseek/deepseek-v4-pro"
+        assert usage["transport"] == "litellm"
+        assert fallback.generate.call_args.kwargs["audit_context"]["transport"] == "litellm"
+
+    def test_backend_fallback_persists_sanitized_primary_failure_diagnostic(self):
+        from src.llm.generation_backend import (
+            GenerationError,
+            GenerationErrorCode,
+            GenerationResult,
+        )
+        from src.services.run_diagnostics import (
+            activate_run_diagnostic_context,
+            current_diagnostic_snapshot,
+            reset_run_diagnostic_context,
+        )
+
+        analyzer = self._make_analyzer()
+        analyzer._config_override.generation_backend = "codex_cli"
+        analyzer._config_override.generation_fallback_backend = "litellm"
+        primary = MagicMock()
+        primary.generate.side_effect = GenerationError(
+            error_code=GenerationErrorCode.NON_ZERO_EXIT,
+            stage="execution",
+            retryable=False,
+            fallbackable=True,
+            backend="codex_cli",
+            provider="codex_cli",
+            details={"reason": "Authorization: Bearer sk-secret-value"},
+        )
+        fallback = MagicMock()
+        fallback.generate.return_value = GenerationResult(
+            text='{"sentiment_score": 56}',
+            model="deepseek/deepseek-v4-pro",
+            provider="deepseek",
+            backend="litellm",
+            usage={"transport": "litellm", "total_tokens": 12},
+        )
+
+        token = activate_run_diagnostic_context(
+            trace_id="trace-secret",
+            task_id="task-secret",
+            stock_code="600410",
+            trigger_source="api",
+        )
+        try:
+            with (
+                patch.object(analyzer, "get_generation_backend_config_error", return_value=None),
+                patch.object(
+                    analyzer,
+                    "_get_generation_backend",
+                    side_effect=lambda backend_id: primary if backend_id == "codex_cli" else fallback,
+                ),
+            ):
+                analyzer._call_litellm(
+                    "prompt",
+                    {"max_tokens": 128},
+                    audit_context={"call_type": "analysis", "transport": "codex_cli"},
+                )
+            snapshot = current_diagnostic_snapshot()
+        finally:
+            reset_run_diagnostic_context(token)
+
+        diagnostic_json = json.dumps(snapshot, ensure_ascii=False)
+        assert "sk-secret-value" not in diagnostic_json
+        assert snapshot["llm_runs"][0]["model"] == "codex_cli"
+        assert snapshot["llm_runs"][0]["error_type"] == "non_zero_exit"
+
+    def test_litellm_model_chain_records_failed_model_before_fallback_success(self):
+        analyzer = self._make_analyzer()
+        analyzer._config_override.litellm_model = "deepseek/deepseek-v4-flash"
+        analyzer._config_override.litellm_fallback_models = ["deepseek/deepseek-v4-pro"]
+        valid_json = json.dumps({"sentiment_score": 56, "trend_prediction": "震荡"})
+
+        def fake_dispatch(model, _call_kwargs, **_kwargs):
+            content = "not-json" if model.endswith("flash") else valid_json
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content=content))],
+                usage=SimpleNamespace(prompt_tokens=1, completion_tokens=2, total_tokens=3),
+            )
+
+        with (
+            patch.object(analyzer, "_dispatch_litellm_completion", side_effect=fake_dispatch),
+            patch("src.analyzer.record_llm_run", create=True) as record_llm_run,
+        ):
+            _text, model_used, _usage = analyzer._call_litellm_impl(
+                "prompt",
+                {"max_tokens": 128},
+                response_validator=analyzer._validate_json_response,
+                audit_context={"call_type": "analysis", "transport": "litellm"},
+            )
+
+        record_llm_run.assert_called_once_with(
+            success=False,
+            provider="deepseek",
+            model="deepseek/deepseek-v4-flash",
+            call_type="analysis",
+            fallback_model="deepseek/deepseek-v4-pro",
+            error_type="invalid_json",
+            error_message="Expecting value: line 1 column 1 (char 0)",
+        )
+        assert model_used == "deepseek/deepseek-v4-pro"
 
     def test_all_models_invalid_json_raises_all_models_failed_error(self):
         """When all models return non-JSON, _AllModelsFailedError is raised with last_response_text."""

@@ -281,6 +281,8 @@ daily_stock_analysis/
 
 > 生成后端状态说明：Web 设置页的快速检查只读取已保存配置、未保存草稿，并检查本地 CLI 可执行文件是否可见，不发起真实模型请求；JSON 冒烟测试是单独的显式操作，会使用服务端固定的 JSON 提示词和 schema 发起一次真实请求。`health_status` 与 `last_error_code/message` 只表示本次状态计算或冒烟测试结果，不是历史持久健康状态。
 
+> 生成回退诊断说明：普通分析使用本地 CLI 主后端并回退到 LiteLLM 时，运行流程按实际顺序记录经过脱敏的 CLI 失败、LiteLLM 模型失败与最终成功模型。用量页只记录具备 token 遥测的实际 API 调用；回退到 DeepSeek 等 API 模型时，模型取最终实际模型，`transport` 记为 `litellm`，不会继续误标为最初选择的本地 CLI。旧历史不回填缺失的尝试链。
+
 > *注：`ANSPIRE_API_KEYS`、`AIHUBMIX_KEY`、`GEMINI_API_KEY`、`ANTHROPIC_API_KEY`、`OPENAI_API_KEY` 或 `OLLAMA_API_BASE` 至少配置一个。`ANSPIRE_API_KEYS` 与 `AIHUBMIX_KEY` 无需配置 `OPENAI_BASE_URL`，系统自动适配。
 
 > 问股 single-agent 路径会在后台为 DeepSeek V4 thinking + tool-call 保存最近 3 条 provider trace，并按原时序回放 `reasoning_content` / tool 结果；该能力不新增配置项，不进入 Web 历史 API，Claude extended thinking 仅覆盖离线 plumbing，multi-agent trace 注入留作后续增强。

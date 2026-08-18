@@ -77,6 +77,7 @@ from src.llm.provider_cache import (
     filter_prompt_cache_telemetry,
 )
 from src.llm.response_content import strip_leading_think_wrapper
+from src.services.run_diagnostics import record_llm_run
 from src.storage import persist_llm_usage
 from src.data.stock_mapping import STOCK_NAME_MAP
 from src.report_language import (
@@ -2591,6 +2592,10 @@ class GeminiAnalyzer:
         fallback_backend_id = resolve_generation_fallback_backend_id(config)
         return backend_id, fallback_backend_id
 
+    def get_generation_backend_id(self) -> str:
+        """Return the configured primary generation backend for diagnostics."""
+        return self._resolve_generation_backend_config()[0]
+
     def get_generation_backend_config_error(self) -> Optional[GenerationError]:
         """Return a structured backend config error, if the backend cannot run."""
         try:
@@ -3001,6 +3006,16 @@ class GeminiAnalyzer:
         except GenerationError as exc:
             if not exc.fallbackable or not fallback_backend_id:
                 raise
+            diagnostic_call_type = str((audit_context or {}).get("call_type") or "").strip()
+            if diagnostic_call_type:
+                record_llm_run(
+                    success=False,
+                    provider=exc.provider,
+                    model=exc.backend,
+                    call_type=diagnostic_call_type,
+                    error_type=exc.error_code.value,
+                    error_message=exc.details.get("reason") or exc.message,
+                )
             try:
                 fallback_backend = self._get_generation_backend(fallback_backend_id)
             except GenerationError as fallback_exc:
@@ -3023,6 +3038,8 @@ class GeminiAnalyzer:
                     },
                 ) from fallback_exc
             try:
+                fallback_audit_context = dict(audit_context or {})
+                fallback_audit_context["transport"] = fallback_backend_id
                 result = fallback_backend.generate(
                     prompt,
                     generation_config,
@@ -3030,7 +3047,7 @@ class GeminiAnalyzer:
                     stream=stream,
                     stream_progress_callback=stream_progress_callback,
                     response_validator=response_validator,
-                    audit_context=audit_context,
+                    audit_context=fallback_audit_context,
                 )
             except _AllModelsFailedError:
                 raise
@@ -3133,7 +3150,7 @@ class GeminiAnalyzer:
         last_usage: Dict[str, Any] = {}
         effective_system_prompt = system_prompt or self.TEXT_SYSTEM_PROMPT
         router_model_names = set(get_configured_llm_models(config.llm_model_list))
-        for model in models_to_try:
+        for model_index, model in enumerate(models_to_try):
             origins = route_deployment_origins(config.llm_model_list, model)
             model_stream = bool(stream and not origins.has_hermes)
             recovery_model_list = config.llm_model_list
@@ -3317,6 +3334,31 @@ class GeminiAnalyzer:
                     )
                 else:
                     logger.warning("[LiteLLM] %s failed: %s", model, safe_error)
+                diagnostic_call_type = str((audit_context or {}).get("call_type") or "").strip()
+                if diagnostic_call_type:
+                    error_type = (
+                        e.error_code.value
+                        if isinstance(e, GenerationError)
+                        else type(e).__name__
+                    )
+                    error_message = (
+                        e.details.get("reason")
+                        if isinstance(e, GenerationError)
+                        else safe_error
+                    )
+                    record_llm_run(
+                        success=False,
+                        provider=usage_provider,
+                        model=model,
+                        call_type=diagnostic_call_type,
+                        fallback_model=(
+                            models_to_try[model_index + 1]
+                            if model_index + 1 < len(models_to_try)
+                            else None
+                        ),
+                        error_type=error_type,
+                        error_message=error_message,
+                    )
                 last_error = RuntimeError(f"{type(e).__name__}: {safe_error}")
                 continue
 
@@ -3511,6 +3553,7 @@ class GeminiAnalyzer:
                 analysis_context_pack_summary=analysis_context_pack_summary,
             )
             legacy_audit_context = {
+                "call_type": "analysis",
                 "language": report_language,
                 "market_group": _legacy_market_group(code),
                 "analysis_mode": "stock_analysis",
@@ -3593,7 +3636,10 @@ class GeminiAnalyzer:
 
                 # 记录响应信息
                 logger.info(
-                    f"[LLM返回] {model_name} 响应成功, 耗时 {elapsed:.2f}s, 响应长度 {len(response_text)} 字符"
+                    "[LLM返回] %s 响应成功, 耗时 %.2fs, 响应长度 %d 字符",
+                    model_used,
+                    elapsed,
+                    len(response_text),
                 )
                 if backend_id in LOCAL_CLI_GENERATION_BACKEND_IDS:
                     response_preview = redact_diagnostic_text(response_text, limit=300)

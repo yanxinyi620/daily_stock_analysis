@@ -52,6 +52,7 @@ from src.search_service import SearchService
 from src.analysis_context_pack_prompt import format_analysis_context_pack_prompt_section
 from src.analysis_context_pack_overview import render_analysis_context_pack_overview
 from src.market_phase_summary import MARKET_PHASE_SUMMARY_KEY, render_market_phase_summary
+from src.llm.backend_registry import LOCAL_CLI_GENERATION_BACKEND_IDS
 from src.daily_market_context_guardrail import apply_daily_market_context_guardrail
 from src.agent.final_explanation import (
     PipelineActionAdjustment,
@@ -748,8 +749,15 @@ class StockAnalysisPipeline:
             self._emit_progress(64, f"{stock_name}：正在请求 LLM 生成报告")
             llm_started_at = time.monotonic()
             try:
+                generation_backend_id = self.analyzer.get_generation_backend_id()
+                diagnostic_start_model = (
+                    generation_backend_id
+                    if generation_backend_id in LOCAL_CLI_GENERATION_BACKEND_IDS
+                    else getattr(self.config, "litellm_model", None)
+                )
                 record_llm_run_started(
-                    model=getattr(self.config, "litellm_model", None),
+                    provider=generation_backend_id,
+                    model=diagnostic_start_model,
                     call_type="analysis",
                 )
                 result = self.analyzer.analyze(
