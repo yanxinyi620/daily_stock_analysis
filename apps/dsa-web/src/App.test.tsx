@@ -72,6 +72,26 @@ vi.mock('./pages/LoginPage', () => ({
   default: () => <div data-testid="login-page">Login</div>,
 }));
 
+vi.mock('./pages/mobile/MobileHomePage', () => ({
+  default: () => <div data-testid="mobile-home-page">Mobile home</div>,
+}));
+
+vi.mock('./pages/mobile/MobileWatchlistPage', () => ({
+  default: () => <div data-testid="mobile-watchlist-page">Mobile watchlist</div>,
+}));
+
+vi.mock('./pages/mobile/MobileChatPage', () => ({
+  default: () => <div data-testid="mobile-chat-page">Mobile chat</div>,
+}));
+
+vi.mock('./pages/mobile/MobileTasksPage', () => ({
+  default: () => <div data-testid="mobile-tasks-page">Mobile tasks</div>,
+}));
+
+vi.mock('./pages/mobile/MobileMePage', () => ({
+  default: () => <div data-testid="mobile-me-page">Mobile me</div>,
+}));
+
 function makeAuthState(overrides: Partial<AuthState> = {}): AuthState {
   return {
     authEnabled: false,
@@ -150,6 +170,23 @@ describe('App routing behavior', () => {
     expect(await screen.findByTestId('decision-signals-page')).toBeInTheDocument();
     expect(setCurrentRoute).toHaveBeenCalledWith('/decision-signals');
     expect(screen.queryByTestId('home-page')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['/m', 'mobile-home-page'],
+    ['/m/watchlist', 'mobile-watchlist-page'],
+    ['/m/chat', 'mobile-chat-page'],
+    ['/m/tasks', 'mobile-tasks-page'],
+    ['/m/me', 'mobile-me-page'],
+  ])('routes %s through the mobile shell', async (path, pageTestId) => {
+    window.history.pushState({}, '', path);
+
+    render(<App />);
+
+    expect(await screen.findByTestId(pageTestId)).toBeInTheDocument();
+    expect(screen.getByTestId('mobile-shell')).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: '移动端主导航' })).toBeInTheDocument();
+    expect(setCurrentRoute).toHaveBeenCalledWith(path);
   });
 
   it('redirects authenticated login visits back to the home page', async () => {

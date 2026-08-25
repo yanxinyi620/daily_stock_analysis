@@ -1690,6 +1690,36 @@ class TestPipelineRouting(unittest.TestCase):
 class TestAnalyzeWithAgentStockName(unittest.TestCase):
     """Test stock-name handling in _analyze_with_agent."""
 
+    def test_decision_signal_extraction_reuses_pipeline_database(self):
+        """Signal persistence must not fall back to the process-global production database."""
+        from src.analyzer import AnalysisResult
+        from src.core.pipeline import StockAnalysisPipeline
+
+        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline.db = MagicMock(name="isolated_test_database")
+        pipeline.trace_id = "trace-isolated"
+        pipeline.query_source = "test"
+        result = AnalysisResult(
+            code="588200",
+            name="科创芯片ETF",
+            sentiment_score=70,
+            operation_advice="买入",
+            trend_prediction="震荡",
+            analysis_summary="测试摘要",
+        )
+
+        with patch('src.core.pipeline.extract_and_persist_from_analysis_result', return_value=None) as persist:
+            pipeline._extract_decision_signal_after_history_save(
+                result=result,
+                query_id="q-isolated",
+                source_report_id=1,
+                report_type="simple",
+                context_snapshot={},
+            )
+
+        service = persist.call_args.kwargs["service"]
+        self.assertIs(service.db, pipeline.db)
+
     def test_analyze_with_agent_keeps_high_score_hold_action_consistent_across_outputs(self):
         """A high-score hold may align to buy, and every public output must use that action."""
         with patch('src.core.pipeline.get_config') as mock_config, \

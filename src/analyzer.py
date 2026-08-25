@@ -77,6 +77,7 @@ from src.llm.provider_cache import (
     filter_prompt_cache_telemetry,
 )
 from src.llm.response_content import strip_leading_think_wrapper
+from src.services.run_diagnostics import record_llm_run
 from src.storage import persist_llm_usage
 from src.data.stock_mapping import STOCK_NAME_MAP
 from src.report_language import (
@@ -1893,6 +1894,7 @@ class GeminiAnalyzer:
 
 ## 输出格式：决策仪表盘 JSON
 
+最终响应只输出一个 JSON 对象，不要输出解释文字或 Markdown 代码围栏。
 请严格按照以下 JSON 格式输出，这是一个完整的【决策仪表盘】：
 
 ```json
@@ -2081,6 +2083,7 @@ class GeminiAnalyzer:
 
 ## 输出格式：决策仪表盘 JSON
 
+最终响应只输出一个 JSON 对象，不要输出解释文字或 Markdown 代码围栏。
 请严格按照以下 JSON 格式输出，这是一个完整的【决策仪表盘】：
 
 ```json
@@ -2589,6 +2592,10 @@ class GeminiAnalyzer:
         fallback_backend_id = resolve_generation_fallback_backend_id(config)
         return backend_id, fallback_backend_id
 
+    def get_generation_backend_id(self) -> str:
+        """Return the configured primary generation backend for diagnostics."""
+        return self._resolve_generation_backend_config()[0]
+
     def get_generation_backend_config_error(self) -> Optional[GenerationError]:
         """Return a structured backend config error, if the backend cannot run."""
         try:
@@ -2999,6 +3006,16 @@ class GeminiAnalyzer:
         except GenerationError as exc:
             if not exc.fallbackable or not fallback_backend_id:
                 raise
+            diagnostic_call_type = str((audit_context or {}).get("call_type") or "").strip()
+            if diagnostic_call_type:
+                record_llm_run(
+                    success=False,
+                    provider=exc.provider,
+                    model=exc.backend,
+                    call_type=diagnostic_call_type,
+                    error_type=exc.error_code.value,
+                    error_message=exc.details.get("reason") or exc.message,
+                )
             try:
                 fallback_backend = self._get_generation_backend(fallback_backend_id)
             except GenerationError as fallback_exc:
@@ -3021,6 +3038,8 @@ class GeminiAnalyzer:
                     },
                 ) from fallback_exc
             try:
+                fallback_audit_context = dict(audit_context or {})
+                fallback_audit_context["transport"] = fallback_backend_id
                 result = fallback_backend.generate(
                     prompt,
                     generation_config,
@@ -3028,7 +3047,7 @@ class GeminiAnalyzer:
                     stream=stream,
                     stream_progress_callback=stream_progress_callback,
                     response_validator=response_validator,
-                    audit_context=audit_context,
+                    audit_context=fallback_audit_context,
                 )
             except _AllModelsFailedError:
                 raise
@@ -3131,7 +3150,7 @@ class GeminiAnalyzer:
         last_usage: Dict[str, Any] = {}
         effective_system_prompt = system_prompt or self.TEXT_SYSTEM_PROMPT
         router_model_names = set(get_configured_llm_models(config.llm_model_list))
-        for model in models_to_try:
+        for model_index, model in enumerate(models_to_try):
             origins = route_deployment_origins(config.llm_model_list, model)
             model_stream = bool(stream and not origins.has_hermes)
             recovery_model_list = config.llm_model_list
@@ -3306,7 +3325,40 @@ class GeminiAnalyzer:
 
             except Exception as e:
                 safe_error = self._sanitize_litellm_exception_text(e, config=config, model=model)
-                logger.warning("[LiteLLM] %s failed: %s", model, safe_error)
+                if isinstance(e, GenerationError) and e.stage == "validation":
+                    reason = str(e.details.get("reason") or e.error_code.value)
+                    logger.warning(
+                        "[LiteLLM] %s validation failed: %s",
+                        model,
+                        reason,
+                    )
+                else:
+                    logger.warning("[LiteLLM] %s failed: %s", model, safe_error)
+                diagnostic_call_type = str((audit_context or {}).get("call_type") or "").strip()
+                if diagnostic_call_type:
+                    error_type = (
+                        e.error_code.value
+                        if isinstance(e, GenerationError)
+                        else type(e).__name__
+                    )
+                    error_message = (
+                        e.details.get("reason")
+                        if isinstance(e, GenerationError)
+                        else safe_error
+                    )
+                    record_llm_run(
+                        success=False,
+                        provider=usage_provider,
+                        model=model,
+                        call_type=diagnostic_call_type,
+                        fallback_model=(
+                            models_to_try[model_index + 1]
+                            if model_index + 1 < len(models_to_try)
+                            else None
+                        ),
+                        error_type=error_type,
+                        error_message=error_message,
+                    )
                 last_error = RuntimeError(f"{type(e).__name__}: {safe_error}")
                 continue
 
@@ -3344,6 +3396,7 @@ class GeminiAnalyzer:
             )
             if isinstance(result, tuple):
                 text, model_used, usage = result
+                self.last_model_used = model_used
                 if should_persist_usage_telemetry(usage):
                     persist_llm_usage(usage, model_used, call_type="market_review")
                 return text
@@ -3501,6 +3554,7 @@ class GeminiAnalyzer:
                 analysis_context_pack_summary=analysis_context_pack_summary,
             )
             legacy_audit_context = {
+                "call_type": "analysis",
                 "language": report_language,
                 "market_group": _legacy_market_group(code),
                 "analysis_mode": "stock_analysis",
@@ -3583,7 +3637,10 @@ class GeminiAnalyzer:
 
                 # 记录响应信息
                 logger.info(
-                    f"[LLM返回] {model_name} 响应成功, 耗时 {elapsed:.2f}s, 响应长度 {len(response_text)} 字符"
+                    "[LLM返回] %s 响应成功, 耗时 %.2fs, 响应长度 %d 字符",
+                    model_used,
+                    elapsed,
+                    len(response_text),
                 )
                 if backend_id in LOCAL_CLI_GENERATION_BACKEND_IDS:
                     response_preview = redact_diagnostic_text(response_text, limit=300)
@@ -4385,7 +4442,7 @@ class GeminiAnalyzer:
         if len(fenced_matches) == 1:
             match = fenced_matches[0]
             outside = (text[:match.start()] + text[match.end():]).strip()
-            if outside:
+            if "```" in outside or any(char in outside for char in "{}[]"):
                 raise ValueError("ambiguous_json")
             fence_lang = (match.group("lang") or "").strip().lower()
             if fence_lang not in {"", "json"}:
@@ -4399,10 +4456,50 @@ class GeminiAnalyzer:
         try:
             data = self._load_analysis_json_candidate(stripped)
         except json.JSONDecodeError as exc:
-            if self._contains_embedded_json_object(text):
-                raise ValueError("ambiguous_json") from exc
-            raise
+            candidate = self._extract_unique_embedded_json_object(text)
+            if candidate is None:
+                raise
+            return candidate
         return stripped, data
+
+    def _extract_unique_embedded_json_object(
+        self,
+        text: str,
+    ) -> Optional[Tuple[str, Dict[str, Any]]]:
+        """Return one top-level object surrounded only by non-JSON prose."""
+
+        decoder = json.JSONDecoder()
+        candidates: List[Tuple[int, int, str, Dict[str, Any]]] = []
+        for index, char in enumerate(text):
+            if char != "{":
+                continue
+            try:
+                value, end = decoder.raw_decode(text[index:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict):
+                candidates.append((index, index + end, text[index:index + end], value))
+
+        maximal = [
+            candidate
+            for candidate in candidates
+            if not any(
+                other[0] <= candidate[0]
+                and candidate[1] <= other[1]
+                and (other[0], other[1]) != (candidate[0], candidate[1])
+                for other in candidates
+            )
+        ]
+        if len(maximal) != 1:
+            if maximal:
+                raise ValueError("ambiguous_json")
+            return None
+
+        start, end, json_str, data = maximal[0]
+        outside = (text[:start] + text[end:]).strip()
+        if "```" in outside or any(char in outside for char in "{}[]"):
+            raise ValueError("ambiguous_json")
+        return json_str, data
 
     def _load_analysis_json_candidate(self, json_str: str) -> Dict[str, Any]:
         """Parse one already-selected JSON candidate, repairing common LLM JSON drift."""
@@ -4424,24 +4521,6 @@ class GeminiAnalyzer:
         if not isinstance(data, dict):
             raise TypeError("json_root_not_object")
         return data
-
-    @staticmethod
-    def _contains_embedded_json_object(text: str) -> bool:
-        decoder = json.JSONDecoder()
-        count = 0
-        for index, char in enumerate(text):
-            if char != "{":
-                continue
-            try:
-                _obj, end = decoder.raw_decode(text[index:])
-            except json.JSONDecodeError:
-                continue
-            count += 1
-            before = text[:index].strip()
-            after = text[index + end:].strip()
-            if count > 1 or before or after:
-                return True
-        return False
 
     def _validate_analysis_minimal_contract(self, data: Dict[str, Any]) -> None:
         try:

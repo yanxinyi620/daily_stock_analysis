@@ -12,6 +12,7 @@ import {
   Factory,
   Flame,
   Gem,
+  History,
   Landmark,
   Pickaxe,
   Plane,
@@ -35,6 +36,7 @@ import {
   type ScreeningHotspotsResponse,
   type ScreeningScreenResponse,
   type ScreeningScreenTaskStatus,
+  type ScreeningRunSummary,
   type ScreeningStrategy,
 } from '../api/screening';
 import { formatParsedApiError, getParsedApiError, toApiErrorMessage, type ParsedApiError } from '../api/error';
@@ -60,6 +62,26 @@ const formatStrategyCategory = (value?: string) => {
     return '自定义';
   }
   return STRATEGY_CATEGORY_LABELS[normalized.toLowerCase()] || normalized;
+};
+
+const formatRunTime = (value?: string | null) => {
+  if (!value) {
+    return '时间未知';
+  }
+  const normalized = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value)
+    ? value
+    : `${value.replace(' ', 'T')}Z`;
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date);
 };
 
 type PersistedScreenTask = {
@@ -834,6 +856,12 @@ const StockScreeningPage: React.FC = () => {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(restoredTask?.taskId ?? null);
   const [taskProgress, setTaskProgress] = useState(restoredTask?.taskId ? 10 : 0);
   const [taskMessage, setTaskMessage] = useState(restoredTask?.taskId ? '正在恢复选股任务状态...' : '');
+  const [resultView, setResultView] = useState<'current' | 'history'>('current');
+  const [historyRuns, setHistoryRuns] = useState<ScreeningRunSummary[]>([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historyError, setHistoryError] = useState('');
+  const [loadingHistoryRunId, setLoadingHistoryRunId] = useState<string | null>(null);
 
   const selectedStrategy = useMemo(() => strategies.find((item) => item.id === strategy), [strategies, strategy]);
   const selectedStrategyTitle = selectedStrategy?.name || selectedStrategy?.title || '自定义策略';
@@ -862,6 +890,44 @@ const StockScreeningPage: React.FC = () => {
     setCandidates(nextCandidates);
     setExpandedCode(nextCandidates[0]?.code ?? null);
   }, []);
+
+  const loadHistory = useCallback(async () => {
+    setLoadingHistory(true);
+    setHistoryError('');
+    try {
+      const response = await screeningApi.getHistory({ limit: 20 });
+      setHistoryRuns(response.runs || []);
+      setHistoryLoaded(true);
+    } catch (err) {
+      setHistoryError(toApiErrorMessage(err, '选股历史加载失败，请稍后重试。'));
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, []);
+
+  const handleResultViewChange = (nextView: 'current' | 'history') => {
+    setResultView(nextView);
+    if (nextView === 'history' && !historyLoaded && !loadingHistory) {
+      void loadHistory();
+    }
+  };
+
+  const handleOpenHistoryRun = async (run: ScreeningRunSummary) => {
+    setLoadingHistoryRunId(run.runId);
+    setHistoryError('');
+    try {
+      const detail = await screeningApi.getRun(run.runId);
+      applyScreenResult(detail.result);
+      setMarket(detail.market || detail.result.market || market);
+      setStrategy(detail.strategy || detail.result.strategy || strategy);
+      setResultView('current');
+      setError('');
+    } catch (err) {
+      setHistoryError(toApiErrorMessage(err, '历史选股结果加载失败，请稍后重试。'));
+    } finally {
+      setLoadingHistoryRunId(null);
+    }
+  };
 
   const clearScreeningResults = () => {
     setCandidates([]);
@@ -1119,6 +1185,7 @@ const StockScreeningPage: React.FC = () => {
       if (task.status === 'completed') {
         if (task.result) {
           applyScreenResult(task.result);
+          void loadHistory();
           setError('');
         } else {
           setError('选股任务已完成，但服务端未返回候选结果。');
@@ -1181,7 +1248,7 @@ const StockScreeningPage: React.FC = () => {
         window.clearTimeout(timer);
       }
     };
-  }, [activeTaskId, applyScreenResult]);
+  }, [activeTaskId, applyScreenResult, loadHistory]);
 
   const handleEnable = async () => {
     setEnabling(true);
@@ -1634,7 +1701,115 @@ const StockScreeningPage: React.FC = () => {
         </div>
       </section>
 
-      {loading || screenMeta ? (
+      <section className="rounded-2xl border border-border/80 bg-card/95 p-2 shadow-soft-card">
+        <div className="grid grid-cols-2 gap-2" role="tablist" aria-label="选股结果视图">
+          <button
+            type="button"
+            role="tab"
+            aria-pressed={resultView === 'current'}
+            aria-selected={resultView === 'current'}
+            className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors ${
+              resultView === 'current'
+                ? 'border border-cyan/30 bg-cyan/10 text-cyan'
+                : 'text-secondary-text hover:bg-hover hover:text-foreground'
+            }`}
+            onClick={() => handleResultViewChange('current')}
+          >
+            <Search className="h-4 w-4" />
+            当前结果
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-pressed={resultView === 'history'}
+            aria-selected={resultView === 'history'}
+            className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors ${
+              resultView === 'history'
+                ? 'border border-cyan/30 bg-cyan/10 text-cyan'
+                : 'text-secondary-text hover:bg-hover hover:text-foreground'
+            }`}
+            onClick={() => handleResultViewChange('history')}
+          >
+            <History className="h-4 w-4" />
+            历史记录
+          </button>
+        </div>
+      </section>
+
+      {resultView === 'history' ? (
+        <section className="rounded-2xl border border-border bg-card/95 p-4 shadow-soft-card">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-foreground">选股历史</h2>
+              <p className="mt-1 text-xs text-secondary-text">最近 20 次运行，包含无候选结果的记录。</p>
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              isLoading={loadingHistory}
+              loadingText="刷新中..."
+              onClick={() => void loadHistory()}
+            >
+              <RefreshCw className="h-4 w-4" />
+              刷新
+            </Button>
+          </div>
+
+          {historyError ? <InlineAlert variant="warning" title="历史记录暂不可用" message={historyError} /> : null}
+
+          {loadingHistory && !historyLoaded ? (
+            <div className="rounded-xl border border-dashed border-border bg-surface/70 px-5 py-10 text-center text-sm text-secondary-text">
+              正在加载选股历史...
+            </div>
+          ) : historyRuns.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border bg-surface/70 px-5 py-10 text-center">
+              <p className="text-sm font-medium text-foreground">暂无选股历史</p>
+              <p className="mt-1 text-xs text-secondary-text">完成一次选股后，运行摘要会保存在这里。</p>
+            </div>
+          ) : (
+            <div className="grid gap-3">
+              {historyRuns.map((run) => (
+                <article
+                  key={run.runId}
+                  className="rounded-xl border border-border/80 bg-surface/55 p-4 transition-colors hover:border-cyan/35"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-foreground">{run.strategy}</span>
+                        <span className="rounded-full bg-cyan/10 px-2 py-0.5 text-xs font-semibold text-cyan">
+                          {MARKETS.find((item) => item.id === run.market)?.label || run.market}
+                        </span>
+                        <span className="text-xs text-secondary-text">{formatRunTime(run.createdAt)}</span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-secondary-text">
+                        <span>快照 {run.snapshotCount ?? '-'}</span>
+                        <span>过滤后 {run.afterFilterCount ?? '-'}</span>
+                        <span>候选 {run.candidateCount}</span>
+                        <span>{run.llmRanked ? '智能重排' : '因子排序'}</span>
+                        {run.snapshotSource ? <span>来源 {run.snapshotSource}</span> : null}
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      aria-label={`查看 ${run.runId} 结果`}
+                      isLoading={loadingHistoryRunId === run.runId}
+                      loadingText="加载中..."
+                      disabled={Boolean(loadingHistoryRunId)}
+                      onClick={() => void handleOpenHistoryRun(run)}
+                    >
+                      查看结果
+                    </Button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      {resultView === 'current' && (loading || screenMeta) ? (
         <section className="rounded-2xl border border-border bg-card/95 p-4 shadow-soft-card">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-3">
@@ -1681,7 +1856,7 @@ const StockScreeningPage: React.FC = () => {
         </section>
       ) : null}
 
-      {screenMeta && alertMessages.length > 0 ? (
+      {resultView === 'current' && screenMeta && alertMessages.length > 0 ? (
         <InlineAlert
           variant={llmFailed ? 'warning' : 'info'}
           title={llmFailed ? '当前使用因子排序' : '选股提示'}
@@ -1689,7 +1864,7 @@ const StockScreeningPage: React.FC = () => {
         />
       ) : null}
 
-      {screenMeta ? (
+      {resultView === 'current' && screenMeta ? (
         <section className="rounded-2xl border border-border bg-card/95 p-4 shadow-soft-card">
           <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <h2 className="text-base font-semibold text-foreground">选股结果</h2>

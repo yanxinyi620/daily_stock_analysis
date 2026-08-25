@@ -1315,6 +1315,31 @@ class SystemConfigServiceTestCase(unittest.TestCase):
         self.assertIn("普通分析使用 Codex CLI", checks["llm_agent"]["message"])
         self.assertIn("Agent 工具调用仍使用 LiteLLM 主模型", checks["llm_agent"]["message"])
 
+    def test_get_setup_status_local_cli_primary_agent_model_uses_actual_cli_name(self) -> None:
+        for backend_id, executable, display_name in (
+            ("opencode_cli", "/usr/bin/opencode", "OpenCode CLI"),
+            ("claude_code_cli", "/usr/bin/claude", "Claude Code CLI"),
+        ):
+            with self.subTest(backend_id=backend_id):
+                self._rewrite_env(
+                    f"GENERATION_BACKEND={backend_id}",
+                    "GENERATION_FALLBACK_BACKEND=",
+                    "AGENT_LITELLM_MODEL=openai/gpt-5.5",
+                    "OPENAI_API_KEY=secret-key-value",
+                    "STOCK_LIST=600519",
+                )
+
+                with patch.dict(os.environ, {}, clear=True), \
+                     patch("src.services.system_config_service.shutil.which", return_value=executable):
+                    status = self.service.get_setup_status()
+
+                checks = {check["key"]: check for check in status["checks"]}
+                self.assertEqual(checks["llm_agent"]["status"], "configured")
+                self.assertIn(
+                    f"普通分析使用 {display_name}；Agent 工具调用仍使用 LiteLLM 主模型",
+                    checks["llm_agent"]["message"],
+                )
+
     def test_get_setup_status_codex_primary_agent_inherited_model_explains_litellm_split(self) -> None:
         self._rewrite_env(
             "GENERATION_BACKEND=codex_cli",
@@ -1332,6 +1357,26 @@ class SystemConfigServiceTestCase(unittest.TestCase):
         self.assertEqual(checks["llm_agent"]["status"], "configured")
         self.assertIn(
             "普通分析使用 Codex CLI；Agent 工具调用仍使用 LiteLLM 主模型: openai/gpt-5.5",
+            checks["llm_agent"]["message"],
+        )
+
+    def test_get_setup_status_opencode_primary_inherited_agent_model_uses_actual_cli_name(self) -> None:
+        self._rewrite_env(
+            "GENERATION_BACKEND=opencode_cli",
+            "GENERATION_FALLBACK_BACKEND=",
+            "LITELLM_MODEL=deepseek/deepseek-v4-flash",
+            "DEEPSEEK_API_KEY=secret-key-value",
+            "STOCK_LIST=600519",
+        )
+
+        with patch.dict(os.environ, {}, clear=True), \
+             patch("src.services.system_config_service.shutil.which", return_value="/usr/bin/opencode"):
+            status = self.service.get_setup_status()
+
+        checks = {check["key"]: check for check in status["checks"]}
+        self.assertEqual(checks["llm_agent"]["status"], "configured")
+        self.assertIn(
+            "普通分析使用 OpenCode CLI；Agent 工具调用仍使用 LiteLLM 主模型: deepseek/deepseek-v4-flash",
             checks["llm_agent"]["message"],
         )
 

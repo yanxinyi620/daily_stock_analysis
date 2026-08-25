@@ -68,10 +68,18 @@ const formatModelName = (value: string | undefined, t: (key: UiTextKey, params?:
     return t('stockTrend.neverRecorded');
   }
   const parts = model.split('/').filter(Boolean);
-  return parts[parts.length - 1] || model;
+  const display = parts[parts.length - 1] || model;
+  return display.slice(0, 10);
 };
 
-type AdviceSource = Pick<HistoryItem, 'operationAdvice' | 'trendPrediction' | 'action' | 'actionLabel'>;
+const formatDataQuality = (item: HistoryItem): string => {
+  const quality = item.dataQuality;
+  if (!quality) return '--';
+  if (typeof quality.overallScore === 'number') return String(quality.overallScore);
+  return '--';
+};
+
+type AdviceSource = Pick<HistoryItem, 'operationAdvice' | 'trendPrediction' | 'action' | 'actionLabel' | 'reportType'>;
 
 const formatAdviceParts = (item: AdviceSource, actionLabels: DecisionActionLabelMap): string[] => {
   const actionLabel = getDecisionActionLabel(item.action, item.actionLabel, null, null, actionLabels);
@@ -85,7 +93,9 @@ const formatAdviceParts = (item: AdviceSource, actionLabels: DecisionActionLabel
 };
 
 const formatAdvice = (item: AdviceSource, actionLabels: DecisionActionLabelMap): string =>
-  formatAdviceParts(item, actionLabels)[0];
+  item.reportType === 'market_review'
+    ? item.operationAdvice?.trim() || '--'
+    : formatAdviceParts(item, actionLabels)[0];
 
 const summarizeView = (
   items: HistoryItem[],
@@ -119,6 +129,7 @@ const summarizeView = (
           action: report.summary.action,
           actionLabel: report.summary.actionLabel,
           trendPrediction: report.summary.trendPrediction,
+          reportType: report.meta.reportType,
         }, actionLabels),
     averageScore,
     latestTime: formatDateTime(items[0]?.createdAt || report.meta.createdAt),
@@ -188,6 +199,7 @@ export const StockHistoryTrendDrawer: React.FC<StockHistoryTrendDrawerProps> = (
 }) => {
   const { t } = useUiLanguage();
   const currentRecordId = report.meta.id;
+  const isMarketReview = report.meta.reportType === 'market_review';
   const [selectedRecordId, setSelectedRecordId] = useState(currentRecordId);
   const actionLabels = useMemo(() => buildDecisionActionLabelMap(t), [t]);
   const summary = useMemo(
@@ -298,10 +310,13 @@ export const StockHistoryTrendDrawer: React.FC<StockHistoryTrendDrawerProps> = (
                   <col className="w-[15%]" />
                   <col className="w-[11%]" />
                   <col className="w-[7%]" />
-                  <col className="w-[9%]" />
-                  <col className="w-[9%]" />
-                  <col className="w-[7%]" />
-                  <col className="w-[9%]" />
+                  <col className="w-[10%]" />
+                  {!isMarketReview ? <>
+                    <col className="w-[9%]" />
+                    <col className="w-[9%]" />
+                    <col className="w-[7%]" />
+                    <col className="w-[9%]" />
+                  </> : null}
                   <col className="w-[22%]" />
                   <col className="w-[11%]" />
                 </colgroup>
@@ -310,10 +325,13 @@ export const StockHistoryTrendDrawer: React.FC<StockHistoryTrendDrawerProps> = (
                     <th className="whitespace-nowrap px-4 py-3 font-medium">{t('stockTrend.time')}</th>
                     <th className="whitespace-nowrap px-4 py-3 font-medium">{t('stockTrend.result')}</th>
                     <th className="whitespace-nowrap px-4 py-3 font-medium">{t('stockTrend.score')}</th>
-                    <th className="whitespace-nowrap px-4 py-3 font-medium">{t('stockTrend.stockPrice')}</th>
-                    <th className="whitespace-nowrap px-4 py-3 font-medium">{t('stockTrend.changePct')}</th>
-                    <th className="whitespace-nowrap px-4 py-3 font-medium">{t('stockTrend.volumeRatio')}</th>
-                    <th className="whitespace-nowrap px-4 py-3 font-medium">{t('stockTrend.turnoverRate')}</th>
+                    <th className="whitespace-nowrap px-4 py-3 font-medium">{t('stockTrend.dataQuality')}</th>
+                    {!isMarketReview ? <>
+                      <th className="whitespace-nowrap px-4 py-3 font-medium">{t('stockTrend.stockPrice')}</th>
+                      <th className="whitespace-nowrap px-4 py-3 font-medium">{t('stockTrend.changePct')}</th>
+                      <th className="whitespace-nowrap px-4 py-3 font-medium">{t('stockTrend.volumeRatio')}</th>
+                      <th className="whitespace-nowrap px-4 py-3 font-medium">{t('stockTrend.turnoverRate')}</th>
+                    </> : null}
                     <th className="whitespace-nowrap px-4 py-3 font-medium">{t('stockTrend.model')}</th>
                     <th className="whitespace-nowrap px-4 py-3 font-medium">{t('stockTrend.table.action')}</th>
                   </tr>
@@ -350,18 +368,23 @@ export const StockHistoryTrendDrawer: React.FC<StockHistoryTrendDrawerProps> = (
                         >
                           {formatNumber(item.sentimentScore, 0)}
                         </td>
-                        <td className="px-3 py-3 font-mono text-secondary-text">
-                          {formatNumber(item.currentPrice, 2)}
+                        <td className="whitespace-nowrap px-3 py-3 text-secondary-text">
+                          {formatDataQuality(item)}
                         </td>
-                        <td className="px-3 py-3 font-mono font-semibold" style={getPriceChangeStyle(item.changePct)}>
-                          {formatChangePct(item.changePct)}
-                        </td>
-                        <td className="px-3 py-3 font-mono text-secondary-text">
-                          {formatNumber(item.volumeRatio, 2)}
-                        </td>
-                        <td className="px-3 py-3 font-mono text-secondary-text">
-                          {formatNumber(item.turnoverRate, 2)}{isPresent(item.turnoverRate) ? '%' : ''}
-                        </td>
+                        {!isMarketReview ? <>
+                          <td className="px-3 py-3 font-mono text-secondary-text">
+                            {formatNumber(item.currentPrice, 2)}
+                          </td>
+                          <td className="px-3 py-3 font-mono font-semibold" style={getPriceChangeStyle(item.changePct)}>
+                            {formatChangePct(item.changePct)}
+                          </td>
+                          <td className="px-3 py-3 font-mono text-secondary-text">
+                            {formatNumber(item.volumeRatio, 2)}
+                          </td>
+                          <td className="px-3 py-3 font-mono text-secondary-text">
+                            {formatNumber(item.turnoverRate, 2)}{isPresent(item.turnoverRate) ? '%' : ''}
+                          </td>
+                        </> : null}
                         <td className="truncate px-3 py-3 text-secondary-text" title={item.modelUsed || t('stockTrend.noModelTitle')}>
                           {formatModelName(item.modelUsed, t)}
                         </td>

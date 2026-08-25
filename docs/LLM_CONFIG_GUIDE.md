@@ -97,6 +97,7 @@ Web 启用步骤：打开「设置 → Agent 设置 → 问股生成方式」，
 - `opencode_cli` 会在临时 cwd 写入最小项目 `opencode.json` 以关闭分享、自动更新、快照和常见工具权限，但 OpenCode resolved config 仍可能包含用户本机全局配置；运行时安全边界同时依赖 `--pure`、env denylist、prompt file 权限和 event extractor fail-closed。
 - Web 设置页只暴露安全 preset，不允许提交任意 command / argv / shell string。
 - `codex_cli` / `claude_code_cli` / `opencode_cli` 仍标记为 experimental/limited；如果你的 CLI 版本不支持本仓库已验证的非交互输出契约，DSA 会返回结构化 `capability_unsupported`、`cli_contract_unsupported`、`invalid_json`、`schema_validation_failed` 或对应 backend error，并在配置 backend fallback 时回退到 `litellm`。无法接受该版本漂移风险时，请保持 `GENERATION_BACKEND=litellm`。
+- 股票分析允许从少量说明文字中提取唯一的 JSON 对象，但多个 JSON 对象、多个代码围栏、非对象根节点或核心字段类型错误仍会触发校验失败与后端回退；LiteLLM 回退日志会标明实际模型和结构化失败原因。
 - `opencode_cli` 不支持 OpenCode serve / web / ACP / MCP / attach / `--dangerously-skip-permissions`；DSA 不把 OpenCode final text 当成 Agent tool success。
 
 ## 方式一：极简单模型配置（适合新手）

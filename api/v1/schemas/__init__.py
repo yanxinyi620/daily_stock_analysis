@@ -43,6 +43,10 @@ from api.v1.schemas.stocks import (
 from api.v1.schemas.backtest import (
     BacktestRunRequest,
     BacktestRunResponse,
+    BacktestTaskAccepted,
+    BacktestTaskStatus,
+    BacktestRunHistoryItem,
+    BacktestRunHistoryResponse,
     BacktestResultItem,
     BacktestResultsResponse,
     PerformanceMetrics,
@@ -162,6 +166,10 @@ __all__ = [
     # backtest
     "BacktestRunRequest",
     "BacktestRunResponse",
+    "BacktestTaskAccepted",
+    "BacktestTaskStatus",
+    "BacktestRunHistoryItem",
+    "BacktestRunHistoryResponse",
     "BacktestResultItem",
     "BacktestResultsResponse",
     "PerformanceMetrics",

@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import date, datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from sqlalchemy import and_, select
 
@@ -52,6 +52,7 @@ class BacktestService:
         analysis_date_from: Optional[date] = None,
         analysis_date_to: Optional[date] = None,
         limit: int = 200,
+        progress_callback: Optional[Callable[[int, str], None]] = None,
     ) -> Dict[str, Any]:
         config = get_config()
 
@@ -92,6 +93,8 @@ class BacktestService:
             analysis_date_from=analysis_date_from,
             analysis_date_to=analysis_date_to,
         )
+        if progress_callback is not None:
+            progress_callback(10, f"已找到 {len(candidates)} 条回测候选记录")
 
         processed = 0
         completed = 0
@@ -103,6 +106,12 @@ class BacktestService:
 
         for analysis in candidates:
             processed += 1
+            if progress_callback is not None:
+                progress = 10 + int((processed - 1) * 80 / max(1, len(candidates)))
+                progress_callback(
+                    progress,
+                    f"正在回测第 {processed}/{len(candidates)} 条：{analysis.code}",
+                )
             normalized_code = self._normalize_summary_code(analysis.code)
             if normalized_code:
                 touched_codes.add(normalized_code)
@@ -296,6 +305,8 @@ class BacktestService:
             has_matching_analysis=has_matching_analysis,
             aligned_existing_result_dates=aligned_existing_result_dates,
         )
+        if progress_callback is not None:
+            progress_callback(95, "回测计算完成，正在整理结果")
 
         return {
             "processed": processed,
@@ -652,7 +663,38 @@ class BacktestService:
         )
         if summary is None:
             return None
-        return self._summary_to_dict(summary)
+        persisted = self._summary_to_dict(summary)
+        summary_window = int(summary.eval_window_days)
+        filtered_count = self.repo.count_results(
+            code=code,
+            eval_window_days=summary_window,
+            engine_version=engine_version,
+        )
+        if filtered_count == int(summary.total_evaluations):
+            return persisted
+        if filtered_count == 0:
+            return None
+        if filtered_count > self.MAX_DYNAMIC_SUMMARY_ROWS:
+            logger.warning(
+                "回测汇总与有效结果数量不一致，且动态重算超过上限: persisted=%s filtered=%s",
+                summary.total_evaluations,
+                filtered_count,
+            )
+            return persisted
+
+        rows = self.repo.list_results(
+            code=code,
+            eval_window_days=summary_window,
+            engine_version=engine_version,
+        )
+        return self._build_dynamic_summary(
+            rows=rows,
+            scope=scope,
+            code=lookup_code,
+            eval_window_days=summary_window,
+            engine_version=engine_version,
+            max_rows=self.MAX_DYNAMIC_SUMMARY_ROWS,
+        )
 
     def get_global_summary(self, *, eval_window_days: Optional[int] = None) -> Optional[Dict[str, Any]]:
         """Return overall backtest metrics normalized for Agent memory consumers."""

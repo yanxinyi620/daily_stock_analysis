@@ -2567,6 +2567,52 @@ class BacktestServiceTestCase(unittest.TestCase):
         self.assertEqual(summary["scope"], "overall")
         self.assertEqual(summary["win_count"], 1)
 
+    def test_get_summary_recomputes_when_persisted_total_includes_filtered_composite(self) -> None:
+        service = BacktestService(self.db)
+        service.run_backtest(code="600519", force=False, eval_window_days=3, min_age_days=0, limit=10)
+
+        with self.db.get_session() as session:
+            history = AnalysisHistory(
+                query_id="q-stale-composite-summary",
+                code="COMPOSITE",
+                name="今日综合分析",
+                report_type="composite_analysis",
+                sentiment_score=50,
+                operation_advice="查看综合报告",
+                trend_prediction="综合分析",
+                analysis_summary="composite summary",
+                created_at=datetime(2024, 1, 1, 0, 0, 0),
+                context_snapshot='{}',
+            )
+            session.add(history)
+            session.flush()
+            result = self._make_backtest_result(
+                analysis_history_id=history.id,
+                analysis_date=date(2024, 1, 1),
+                eval_window_days=3,
+            )
+            result.code = "COMPOSITE"
+            result.eval_status = "insufficient_data"
+            result.outcome = None
+            session.add(result)
+
+            persisted = session.query(BacktestSummary).filter(
+                BacktestSummary.scope == "overall",
+                BacktestSummary.code == OVERALL_SENTINEL_CODE,
+                BacktestSummary.eval_window_days == 3,
+            ).one()
+            persisted.total_evaluations = 2
+            persisted.insufficient_count = 1
+            session.commit()
+
+        summary = service.get_summary(scope="overall", code=None, eval_window_days=3)
+
+        self.assertIsNotNone(summary)
+        assert summary is not None
+        self.assertEqual(summary["total_evaluations"], 1)
+        self.assertEqual(summary["completed_count"], 1)
+        self.assertEqual(summary["insufficient_count"], 0)
+
     def test_agent_learning_summary_helpers_keep_skill_rollups_neutral_until_supported(self) -> None:
         service = BacktestService(self.db)
         service.run_backtest(code="600519", force=False, eval_window_days=3, min_age_days=0, limit=10)
@@ -3197,6 +3243,73 @@ class BacktestServiceTestCase(unittest.TestCase):
                 session.query(BacktestResult).filter(BacktestResult.code == "MARKET").count(),
                 0,
             )
+
+    def test_run_backtest_excludes_composite_analysis_records(self) -> None:
+        with self.db.get_session() as session:
+            session.add(
+                AnalysisHistory(
+                    query_id="q-composite",
+                    code="COMPOSITE",
+                    name="今日综合分析",
+                    report_type="composite_analysis",
+                    sentiment_score=50,
+                    operation_advice="查看综合报告",
+                    trend_prediction="综合分析",
+                    analysis_summary="composite summary",
+                    created_at=datetime(2024, 1, 3, 0, 0, 0),
+                    context_snapshot='{}',
+                )
+            )
+            session.commit()
+
+        stats = BacktestService(self.db).run_backtest(
+            code=None,
+            force=False,
+            eval_window_days=3,
+            min_age_days=0,
+            limit=10,
+        )
+
+        self.assertEqual(stats["processed"], 1)
+        with self.db.get_session() as session:
+            self.assertEqual(
+                session.query(BacktestResult).filter(BacktestResult.code == "COMPOSITE").count(),
+                0,
+            )
+
+    def test_existing_composite_results_are_hidden_from_backtest_results(self) -> None:
+        with self.db.get_session() as session:
+            history = AnalysisHistory(
+                query_id="q-composite-existing-result",
+                code="COMPOSITE",
+                name="今日综合分析",
+                report_type="composite_analysis",
+                sentiment_score=50,
+                operation_advice="查看综合报告",
+                trend_prediction="综合分析",
+                analysis_summary="composite summary",
+                created_at=datetime(2024, 1, 3, 0, 0, 0),
+                context_snapshot='{}',
+            )
+            session.add(history)
+            session.flush()
+            result = self._make_backtest_result(
+                analysis_history_id=history.id,
+                analysis_date=date(2024, 1, 3),
+                eval_window_days=3,
+            )
+            result.code = "COMPOSITE"
+            session.add(result)
+            session.commit()
+
+        data = BacktestService(self.db).get_recent_evaluations(
+            code=None,
+            eval_window_days=3,
+            page=1,
+            limit=20,
+        )
+
+        self.assertFalse(any(item["code"] == "COMPOSITE" for item in data["items"]))
 
     def test_run_backtest_includes_null_report_type_records(self) -> None:
         with self.db.get_session() as session:

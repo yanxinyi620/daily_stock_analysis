@@ -8,6 +8,8 @@ const {
   getScreeningStatus,
   getHotspotDetail,
   getHotspots,
+  getScreeningHistory,
+  getScreeningRun,
   getStrategies,
   getScreenTask,
   navigate,
@@ -45,6 +47,8 @@ const {
     getScreeningStatus: vi.fn(),
     getHotspotDetail: vi.fn(),
     getHotspots: vi.fn(),
+    getScreeningHistory: vi.fn(),
+    getScreeningRun: vi.fn(),
     getStrategies: vi.fn(),
     getScreenTask,
     navigate: vi.fn(),
@@ -70,6 +74,8 @@ vi.mock('../../api/screening', () => ({
     getStatus: () => getScreeningStatus(),
     getHotspotDetail: (payload: unknown) => getHotspotDetail(payload),
     getHotspots: (payload: unknown) => getHotspots(payload),
+    getHistory: (payload: unknown) => getScreeningHistory(payload),
+    getRun: (runId: string) => getScreeningRun(runId),
     getStrategies: () => getStrategies(),
     getScreenTask: (taskId: string) => getScreenTask(taskId),
     screen: (payload: unknown) => screenStocks(payload),
@@ -110,6 +116,8 @@ describe('StockScreeningPage', () => {
     getScreeningStatus.mockReset();
     getHotspotDetail.mockReset();
     getHotspots.mockReset();
+    getScreeningHistory.mockReset();
+    getScreeningRun.mockReset();
     getStrategies.mockReset();
     getScreenTask.mockClear();
     navigate.mockReset();
@@ -143,6 +151,7 @@ describe('StockScreeningPage', () => {
       stockCount: 1,
     });
     getHotspots.mockResolvedValue({ enabled: true, provider: 'akshare', hotspots: [], hotspotCount: 0 });
+    getScreeningHistory.mockResolvedValue({ enabled: true, runs: [], runCount: 0 });
     window.sessionStorage.clear();
   });
 
@@ -156,6 +165,76 @@ describe('StockScreeningPage', () => {
     expect(screen.queryByText(/theme_heat/)).not.toBeInTheDocument();
     expect(screen.queryByText('实验功能与风险提示')).not.toBeInTheDocument();
     expect(screen.queryByText('选股结果')).not.toBeInTheDocument();
+  });
+
+  it('loads screening history and restores a selected run into the current result view', async () => {
+    getScreeningStatus.mockResolvedValueOnce({ enabled: true, available: true });
+    getScreeningHistory.mockResolvedValueOnce({
+      enabled: true,
+      runCount: 2,
+      runs: [
+        {
+          runId: 'latest-empty-run',
+          strategy: 'dual_low',
+          market: 'cn',
+          snapshotSource: 'sina',
+          snapshotCount: 5494,
+          afterFilterCount: 0,
+          candidateCount: 0,
+          llmRanked: false,
+          createdAt: '2026-08-13T01:29:15.228082',
+        },
+        {
+          runId: 'successful-run',
+          strategy: 'dual_low',
+          market: 'cn',
+          snapshotSource: 'sina',
+          snapshotCount: 5541,
+          afterFilterCount: 232,
+          candidateCount: 3,
+          llmRanked: false,
+          createdAt: '2026-08-12T08:23:45.519328',
+        },
+      ],
+    });
+    getScreeningRun.mockResolvedValueOnce({
+      enabled: true,
+      runId: 'successful-run',
+      strategy: 'dual_low',
+      market: 'cn',
+      snapshotSource: 'sina',
+      snapshotCount: 5541,
+      afterFilterCount: 232,
+      candidateCount: 3,
+      llmRanked: false,
+      createdAt: '2026-08-12T08:23:45.519328',
+      result: {
+        enabled: true,
+        runId: 'successful-run',
+        strategy: 'dual_low',
+        market: 'cn',
+        snapshotCount: 5541,
+        afterFilterCount: 232,
+        candidateCount: 1,
+        candidates: [{ rank: 1, code: '601668', name: '中国建筑', score: 83.3, reason: '低估值', raw: {} }],
+      },
+    });
+
+    render(<StockScreeningPage />);
+
+    expect(await screen.findByText('选股已开启')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: '历史记录' }));
+
+    await waitFor(() => expect(getScreeningHistory).toHaveBeenCalledWith({ limit: 20 }));
+    expect(await screen.findByText('过滤后 232')).toBeInTheDocument();
+    expect(screen.getByText('候选 0')).toBeInTheDocument();
+    expect(screen.getByText(/08\/12.*16:23/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '查看 successful-run 结果' }));
+
+    await waitFor(() => expect(getScreeningRun).toHaveBeenCalledWith('successful-run'));
+    expect(await screen.findByText('中国建筑')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '当前结果' })).toHaveAttribute('aria-selected', 'true');
   });
 
   it('re-syncs enabled state when Screening availability check fails after config is enabled', async () => {

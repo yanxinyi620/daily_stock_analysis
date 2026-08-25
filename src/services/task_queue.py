@@ -32,6 +32,7 @@ from src.services.run_diagnostics import (
     activate_run_diagnostic_context,
     get_current_diagnostic_context,
     reset_run_diagnostic_context,
+    sanitize_diagnostic_text,
 )
 from src.utils.analysis_metadata import SELECTION_SOURCES
 from src.services.stock_code_utils import resolve_index_stock_code_for_analysis
@@ -57,6 +58,7 @@ class TaskStatus(str, Enum):
     FAILED = "failed"          # Failed
     CANCEL_REQUESTED = "cancel_requested"  # Cancellation requested
     CANCELLED = "cancelled"    # Cancelled by user/system
+    PARTIAL = "partial"        # Completed with partial failures
 
 
 @dataclass
@@ -88,6 +90,9 @@ class TaskInfo:
     trace_id: Optional[str] = None
     region: Optional[str] = None
     flow_events: List[Dict[str, Any]] = field(default_factory=list)
+    task_type: str = "stock_analysis"
+    parent_task_id: Optional[str] = None
+    composite: Optional[Dict[str, Any]] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert task info into an API-friendly dictionary."""
@@ -108,6 +113,9 @@ class TaskInfo:
             "original_query": self.original_query,
             "selection_source": self.selection_source,
             "skills": self.skills,
+            "task_type": self.task_type,
+            "parent_task_id": self.parent_task_id,
+            "composite": copy.deepcopy(self.composite),
         }
         if self.region is not None:
             payload["region"] = self.region
@@ -138,6 +146,9 @@ class TaskInfo:
             trace_id=self.trace_id or self.task_id,
             region=self.region,
             flow_events=copy.deepcopy(self.flow_events),
+            task_type=self.task_type,
+            parent_task_id=self.parent_task_id,
+            composite=copy.deepcopy(self.composite),
         )
 
 
@@ -151,6 +162,22 @@ class DuplicateTaskError(Exception):
         self.stock_code = stock_code
         self.existing_task_id = existing_task_id
         super().__init__(f"股票 {stock_code} 正在分析中 (task_id: {existing_task_id})")
+
+
+class CompositeTaskConflictError(Exception):
+    """Raised when a composite task cannot reserve its whole input set."""
+
+    def __init__(
+        self,
+        *,
+        stock_conflicts: Optional[Dict[str, str]] = None,
+        composite_task_id: Optional[str] = None,
+        market_review_conflict: bool = False,
+    ) -> None:
+        self.stock_conflicts = dict(stock_conflicts or {})
+        self.composite_task_id = composite_task_id
+        self.market_review_conflict = market_review_conflict
+        super().__init__("组合分析与正在运行的任务冲突")
 
 
 class AnalysisTaskQueue:
@@ -188,6 +215,7 @@ class AnalysisTaskQueue:
         self._tasks: Dict[str, TaskInfo] = {}           # task_id -> TaskInfo
         self._analyzing_stocks: Dict[str, str] = {}     # dedupe_key -> task_id
         self._futures: Dict[str, Future] = {}           # task_id -> Future
+        self._active_composite_task_id: Optional[str] = None
         
         # SSE 订阅者列表（asyncio.Queue 实例）
         self._subscribers: List['AsyncQueue'] = []
@@ -511,6 +539,218 @@ class AnalysisTaskQueue:
             self._broadcast_event("task_created", task_info.to_dict())
 
         return task_info.copy()
+
+    def submit_composite_task(
+        self,
+        run_task: Callable[[str], Optional[Dict[str, Any]]],
+        *,
+        stock_codes: List[str],
+        notify: bool,
+        report_language: Optional[str] = None,
+        skills: Optional[List[str]] = None,
+        region: Optional[str] = None,
+    ) -> TaskInfo:
+        """Atomically reserve a stock snapshot and submit one composite parent."""
+
+        canonical_codes = list(dict.fromkeys(
+            normalized
+            for normalized in (
+                _dedupe_stock_code_key(code) for code in stock_codes
+            )
+            if normalized
+        ))
+        if not canonical_codes:
+            raise ValueError("组合分析股票列表不能为空")
+
+        with self._data_lock:
+            conflicts = {
+                code: self._analyzing_stocks[_dedupe_stock_code_key(code)]
+                for code in canonical_codes
+                if _dedupe_stock_code_key(code) in self._analyzing_stocks
+            }
+            if conflicts or self._active_composite_task_id:
+                raise CompositeTaskConflictError(
+                    stock_conflicts=conflicts,
+                    composite_task_id=self._active_composite_task_id,
+                )
+
+            task_id = uuid.uuid4().hex
+            task_info = TaskInfo(
+                task_id=task_id,
+                trace_id=task_id,
+                stock_code="COMPOSITE",
+                stock_name="综合分析",
+                status=TaskStatus.PENDING,
+                message="组合分析任务已加入队列",
+                report_type="composite_analysis",
+                query_source="api",
+                skills=list(skills) if skills is not None else None,
+                report_language=report_language,
+                region=region,
+                task_type="composite_analysis",
+                composite={
+                    "phase": "pending",
+                    "stock_codes": canonical_codes,
+                    "stock_summary": {
+                        "total": len(canonical_codes),
+                        "completed": 0,
+                        "failed": 0,
+                        "current_stock_code": None,
+                    },
+                    "market_review": {"status": "pending"},
+                    "report": {"status": "pending", "history_id": None},
+                    "notification": {
+                        "requested": bool(notify),
+                        "status": "pending" if notify else "disabled",
+                    },
+                },
+            )
+            self._tasks[task_id] = task_info
+            self._active_composite_task_id = task_id
+            for code in canonical_codes:
+                self._analyzing_stocks[_dedupe_stock_code_key(code)] = task_id
+
+            try:
+                future = self.executor.submit(
+                    self._execute_composite_task,
+                    task_id,
+                    run_task,
+                )
+            except Exception:
+                self._release_composite_reservations_locked(task_info)
+                self._tasks.pop(task_id, None)
+                raise
+
+            self._futures[task_id] = future
+            self._broadcast_event("task_created", task_info.to_dict())
+            return task_info.copy()
+
+    def _release_composite_reservations_locked(self, task: TaskInfo) -> None:
+        stock_codes = (task.composite or {}).get("stock_codes") or []
+        for code in stock_codes:
+            key = _dedupe_stock_code_key(str(code))
+            if self._analyzing_stocks.get(key) == task.task_id:
+                del self._analyzing_stocks[key]
+        if self._active_composite_task_id == task.task_id:
+            self._active_composite_task_id = None
+
+    def _execute_composite_task(
+        self,
+        task_id: str,
+        run_task: Callable[[str], Optional[Dict[str, Any]]],
+    ) -> Optional[Dict[str, Any]]:
+        cancelled_before_start = False
+        with self._data_lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                return None
+            if task.status is TaskStatus.CANCEL_REQUESTED:
+                task.status = TaskStatus.CANCELLED
+                task.completed_at = datetime.now()
+                task.progress = 100
+                task.message = "组合分析已取消"
+                self._release_composite_reservations_locked(task)
+                snapshot = task.copy()
+                cancelled_before_start = True
+            else:
+                task.status = TaskStatus.PROCESSING
+                task.started_at = datetime.now()
+                task.progress = 1
+                task.message = "组合分析正在执行"
+                snapshot = task.copy()
+        if cancelled_before_start:
+            self._broadcast_event("task_completed", snapshot.to_dict())
+            return {"status": "cancelled"}
+        self._broadcast_event("task_started", snapshot.to_dict())
+
+        try:
+            result = run_task(task_id) or {}
+            terminal_status = str(result.get("status") or "completed")
+            with self._data_lock:
+                task = self._tasks.get(task_id)
+                if task is None:
+                    return result
+                if terminal_status == TaskStatus.CANCELLED.value:
+                    task.status = TaskStatus.CANCELLED
+                elif terminal_status == TaskStatus.PARTIAL.value:
+                    task.status = TaskStatus.PARTIAL
+                else:
+                    task.status = TaskStatus.COMPLETED
+                task.progress = 100
+                task.completed_at = datetime.now()
+                task.result = result
+                task.message = {
+                    TaskStatus.PARTIAL: "组合分析部分完成",
+                    TaskStatus.CANCELLED: "组合分析已取消",
+                }.get(task.status, "组合分析完成")
+                self._release_composite_reservations_locked(task)
+                snapshot = task.copy()
+            self._broadcast_event("task_completed", snapshot.to_dict())
+            return result
+        except Exception as exc:
+            error_text = (sanitize_diagnostic_text(exc) or "组合分析执行失败")[:200]
+            with self._data_lock:
+                task = self._tasks.get(task_id)
+                if task is None:
+                    return None
+                task.status = TaskStatus.FAILED
+                task.completed_at = datetime.now()
+                task.error = error_text
+                task.message = "组合分析失败"
+                self._release_composite_reservations_locked(task)
+                snapshot = task.copy()
+            self._broadcast_event("task_failed", snapshot.to_dict())
+            logger.error("[TaskQueue] 组合任务失败: %s, error=%s", task_id, error_text)
+            return None
+
+    def update_composite_state(
+        self,
+        task_id: str,
+        *,
+        phase: str,
+        progress: int,
+        patch: Optional[Dict[str, Any]] = None,
+        message: Optional[str] = None,
+    ) -> Optional[TaskInfo]:
+        """Update and broadcast structured composite progress."""
+
+        with self._data_lock:
+            task = self._tasks.get(task_id)
+            if task is None or task.task_type != "composite_analysis":
+                return None
+            composite = copy.deepcopy(task.composite or {})
+            composite["phase"] = phase
+            for key, value in (patch or {}).items():
+                composite[key] = copy.deepcopy(value)
+            task.composite = composite
+            task.progress = max(0, min(100, int(progress)))
+            if message is not None:
+                task.message = message
+            snapshot = task.copy()
+        self._broadcast_event("task_progress", snapshot.to_dict())
+        return snapshot
+
+    def request_composite_cancel(self, task_id: str) -> Optional[TaskInfo]:
+        """Request cooperative cancellation before report persistence/notification."""
+        with self._data_lock:
+            task = self._tasks.get(task_id)
+            if task is None or task.task_type != "composite_analysis":
+                return None
+            if task.status not in (TaskStatus.PENDING, TaskStatus.PROCESSING):
+                return task.copy()
+            task.status = TaskStatus.CANCEL_REQUESTED
+            task.message = "正在取消综合分析"
+            composite = copy.deepcopy(task.composite or {})
+            composite["phase"] = "cancel_requested"
+            task.composite = composite
+            snapshot = task.copy()
+        self._broadcast_event("task_progress", snapshot.to_dict())
+        return snapshot
+
+    def is_composite_cancel_requested(self, task_id: str) -> bool:
+        with self._data_lock:
+            task = self._tasks.get(task_id)
+            return bool(task and task.status is TaskStatus.CANCEL_REQUESTED)
 
     def _rollback_submitted_tasks_locked(self, task_ids: List[str]) -> None:
         """回滚当前批次已创建但尚未稳定返回给调用方的任务。"""

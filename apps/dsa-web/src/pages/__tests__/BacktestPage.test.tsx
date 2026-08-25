@@ -8,11 +8,17 @@ const {
   mockGetResults,
   mockGetOverallPerformance,
   mockGetStockPerformance,
+  mockGetCurrentTask,
+  mockGetRuns,
+  mockWaitForTask,
   mockRun,
 } = vi.hoisted(() => ({
   mockGetResults: vi.fn(),
   mockGetOverallPerformance: vi.fn(),
   mockGetStockPerformance: vi.fn(),
+  mockGetCurrentTask: vi.fn(),
+  mockGetRuns: vi.fn(),
+  mockWaitForTask: vi.fn(),
   mockRun: vi.fn(),
 }));
 
@@ -21,6 +27,9 @@ vi.mock('../../api/backtest', () => ({
     getResults: mockGetResults,
     getOverallPerformance: mockGetOverallPerformance,
     getStockPerformance: mockGetStockPerformance,
+    getCurrentTask: mockGetCurrentTask,
+    getRuns: mockGetRuns,
+    waitForTask: mockWaitForTask,
     run: mockRun,
   },
 }));
@@ -81,6 +90,26 @@ beforeEach(() => {
     limit: 20,
     items: [baseResultItem],
   });
+  mockGetCurrentTask.mockResolvedValue(null);
+  mockGetRuns.mockResolvedValue({
+    total: 1,
+    page: 1,
+    limit: 20,
+    items: [{
+      runId: 'run-1', source: 'web', status: 'completed', code: '600519',
+      force: true, evalWindowDays: 1, minAgeDays: 0, limit: 200,
+      analysisDateFrom: '2026-08-01', analysisDateTo: '2026-08-17',
+      createdAt: '2026-08-17T20:00:00', processed: 3, saved: 3,
+      completed: 2, insufficient: 1, errors: 0, diagnostics: {},
+    }],
+  });
+  mockWaitForTask.mockResolvedValue({
+    processed: 1,
+    saved: 1,
+    completed: 1,
+    insufficient: 0,
+    errors: 0,
+  });
   mockRun.mockResolvedValue({
     processed: 1,
     saved: 1,
@@ -99,6 +128,84 @@ describe('BacktestPage', () => {
       </UiLanguageProvider>,
     );
   }
+
+  it('restores an active backtest after the page is mounted', async () => {
+    mockGetCurrentTask.mockResolvedValueOnce({
+      taskId: 'bt-active',
+      status: 'processing',
+      progress: 45,
+      message: '正在回测第 2/5 条历史分析',
+    });
+    mockWaitForTask.mockReturnValueOnce(new Promise(() => {}));
+
+    render(<BacktestPage />);
+
+    const runningButton = await screen.findByRole('button', { name: '回测中...' });
+    expect(runningButton).toBeDisabled();
+    expect(mockWaitForTask).toHaveBeenCalledWith('bt-active');
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it('shows run history and reruns with the saved parameters', async () => {
+    render(<BacktestPage />);
+    await screen.findByPlaceholderText('按股票代码筛选（留空表示全部）');
+
+    fireEvent.click(screen.getByRole('tab', { name: '运行历史' }));
+
+    expect(await screen.findByText('run-1')).toBeInTheDocument();
+    expect(screen.getByText((content) => content.includes('600519') && content.includes('日窗口'))).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '按相同参数重新运行' }));
+
+    await waitFor(() => {
+      expect(mockRun).toHaveBeenCalledWith({
+        code: '600519',
+        force: true,
+        minAgeDays: 0,
+        evalWindowDays: 1,
+        analysisDateFrom: '2026-08-01',
+        analysisDateTo: '2026-08-17',
+        limit: 200,
+      });
+    });
+  });
+
+  it('refreshes results after a recovered backtest completes', async () => {
+    mockGetCurrentTask.mockResolvedValueOnce({
+      taskId: 'bt-active',
+      status: 'processing',
+      progress: 80,
+      message: '即将完成',
+    });
+    mockWaitForTask.mockResolvedValueOnce({
+      processed: 2,
+      saved: 2,
+      completed: 2,
+      insufficient: 0,
+      errors: 0,
+      appliedEvalWindowDays: 1,
+    });
+
+    render(<BacktestPage />);
+
+    expect(await screen.findByText('已处理:')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(mockGetResults).toHaveBeenLastCalledWith({
+        code: undefined,
+        evalWindowDays: 1,
+        analysisDateFrom: undefined,
+        analysisDateTo: undefined,
+        analysisPhase: undefined,
+        page: 1,
+        limit: 20,
+      });
+      expect(mockGetOverallPerformance).toHaveBeenLastCalledWith({
+        evalWindowDays: 1,
+        analysisDateFrom: undefined,
+        analysisDateTo: undefined,
+        analysisPhase: undefined,
+      });
+    });
+  });
 
   it('renders shared surface inputs and prediction tracking outputs', async () => {
     render(<BacktestPage />);

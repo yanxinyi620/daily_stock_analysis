@@ -5,6 +5,29 @@ import { UI_LANGUAGE_STORAGE_KEY } from '../../../utils/uiLanguage';
 import { HomeStockWorkspace } from '../HomeStockWorkspace';
 import type { HomeWatchlistRow, HomeWorkspaceTab } from '../HomeStockWorkspace';
 
+vi.mock('../../StockAutocomplete', () => ({
+  StockAutocomplete: ({
+    value,
+    onChange,
+    onSubmit,
+    ariaLabel,
+  }: {
+    value: string;
+    onChange: (value: string) => void;
+    onSubmit: (code: string, name?: string, source?: 'manual' | 'autocomplete') => void;
+    ariaLabel?: string;
+  }) => (
+    <div>
+      <input aria-label={ariaLabel} value={value} onChange={(event) => onChange(event.target.value)} />
+      {value ? (
+        <button type="button" onClick={() => onSubmit('600519.SH', '贵州茅台', 'autocomplete')}>
+          贵州茅台 600519
+        </button>
+      ) : null}
+    </div>
+  ),
+}));
+
 function renderWorkspace({
   watchlistRows,
   selectedRecordId,
@@ -17,6 +40,7 @@ function renderWorkspace({
   activeTab?: HomeWorkspaceTab;
 }) {
   const onHistoryItemClick = vi.fn();
+  const onAddToWatchlist = vi.fn().mockResolvedValue(undefined);
   const onRemoveFromWatchlist = vi.fn().mockResolvedValue(undefined);
   window.localStorage.setItem(UI_LANGUAGE_STORAGE_KEY, 'zh');
 
@@ -29,7 +53,7 @@ function renderWorkspace({
         watchlistLoading={false}
         watchlistActioning={false}
         watchlistMessage={null}
-        onAddToWatchlist={vi.fn().mockResolvedValue(undefined)}
+        onAddToWatchlist={onAddToWatchlist}
         onRemoveFromWatchlist={onRemoveFromWatchlist}
         onRefreshWatchlist={vi.fn().mockResolvedValue(undefined)}
         onAnalyzeWatchlist={vi.fn().mockResolvedValue(undefined)}
@@ -51,12 +75,23 @@ function renderWorkspace({
 
   return {
     onHistoryItemClick,
+    onAddToWatchlist,
     onRemoveFromWatchlist,
     rerenderWatchlistRows: (rows: HomeWatchlistRow[]) => view.rerender(renderView(rows)),
   };
 }
 
 describe('HomeStockWorkspace', () => {
+  it('adds an autocomplete selection to the watchlist without starting analysis', async () => {
+    const { onAddToWatchlist } = renderWorkspace({ watchlistRows: [] });
+
+    fireEvent.change(screen.getByLabelText('添加代码，如 600519'), { target: { value: '600519' } });
+    fireEvent.click(screen.getByRole('button', { name: '贵州茅台 600519' }));
+
+    await waitFor(() => expect(onAddToWatchlist).toHaveBeenCalledWith('600519.SH'));
+    expect(screen.getByLabelText('添加代码，如 600519')).toHaveValue('');
+  });
+
   it('uses the mobile scroll-shell contract for watchlist and today content', () => {
     renderWorkspace({ watchlistRows: [] });
 

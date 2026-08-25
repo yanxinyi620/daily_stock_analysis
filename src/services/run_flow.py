@@ -1020,8 +1020,32 @@ def _append_active_flow_events(
                     _append_edge(edges, "task_queue", node_id, "control", nodes[node_id].get("status", "unknown"), label="调用")
                 last_provider_node_by_type[provider_data_type] = (node_id, provider_run)
             elif event_type in {"llm_run", "llm_run_started"}:
-                anchor = "analysis_pipeline" if "analysis_pipeline" in nodes else "task_queue"
-                _append_edge(edges, anchor, node_id, "data", nodes[node_id].get("status", "unknown"), label="生成")
+                if last_llm_node and last_llm_node in nodes:
+                    previous_node = nodes[last_llm_node]
+                    current_node = nodes[node_id]
+                    edge_kind = (
+                        "retry"
+                        if previous_node.get("provider") == current_node.get("provider")
+                        else "fallback"
+                    )
+                    _append_edge(
+                        edges,
+                        last_llm_node,
+                        node_id,
+                        edge_kind,
+                        current_node.get("status", "unknown"),
+                        label="重试" if edge_kind == "retry" else "降级",
+                    )
+                else:
+                    anchor = "analysis_pipeline" if "analysis_pipeline" in nodes else "task_queue"
+                    _append_edge(
+                        edges,
+                        anchor,
+                        node_id,
+                        "data",
+                        nodes[node_id].get("status", "unknown"),
+                        label="生成",
+                    )
                 last_llm_node = node_id
             elif event_type == "history_run":
                 anchor = last_llm_node or ("analysis_pipeline" if "analysis_pipeline" in nodes else "task_queue")
@@ -1098,11 +1122,22 @@ def _history_snapshot_status(
     has_overview = bool(overview)
     if not has_diagnostics and not has_overview:
         return "unknown"
-    if any(
-        node.get("kind") in {"model", "artifact"}
+    artifact_failed = any(
+        node.get("kind") == "artifact"
         and node.get("status") in {"failed", "timeout"}
         for node in nodes.values()
-    ):
+    )
+    model_failed = any(
+        node.get("kind") == "model"
+        and node.get("status") in {"failed", "timeout"}
+        for node in nodes.values()
+    )
+    model_succeeded = any(
+        node.get("kind") == "model"
+        and node.get("status") in {"success", "fallback"}
+        for node in nodes.values()
+    )
+    if artifact_failed or (model_failed and not model_succeeded):
         return "failed"
     if any(status in {"failed", "timeout", "degraded", "fallback"} for status in statuses):
         return "degraded"
@@ -1226,11 +1261,22 @@ def _build_summary(
     model = next(
         (
             _safe_text(node.get("provider"), max_length=120)
-            for node in nodes.values()
-            if node.get("kind") == "model" and node.get("provider")
+            for node in reversed(list(nodes.values()))
+            if node.get("kind") == "model"
+            and node.get("status") in {"success", "fallback"}
+            and node.get("provider")
         ),
         None,
     )
+    if model is None:
+        model = next(
+            (
+                _safe_text(node.get("provider"), max_length=120)
+                for node in reversed(list(nodes.values()))
+                if node.get("kind") == "model" and node.get("provider")
+            ),
+            None,
+        )
     return {
         "elapsed_ms": elapsed_ms,
         "bottleneck_node_id": bottleneck_node_id,

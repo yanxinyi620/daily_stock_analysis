@@ -313,9 +313,15 @@ class SystemConfigService:
     @staticmethod
     def _reload_runtime_singletons() -> None:
         """Reset runtime singleton services after config reload."""
+        from src.agent.factory import reset_tool_registry
         from src.agent.tools.data_tools import reset_fetcher_manager
         from src.search_service import reset_search_service
 
+        # Drop the module-level ToolRegistry so the next
+        # ``build_agent_executor`` / ``build_agent_chat_executor`` call
+        # rebuilds ``_TOOL_REGISTRY`` against the fresh Config and picks up
+        # new ``AGENT_*_TOOL_TIMEOUT_S`` overrides (Issue #1890).
+        reset_tool_registry()
         reset_fetcher_manager()
         reset_search_service()
 
@@ -3636,6 +3642,11 @@ class SystemConfigService:
             effective_map.get("GENERATION_BACKEND"),
             default=LITELLM_BACKEND_ID,
         )
+        local_cli_display_name = (
+            resolve_local_cli_preset(generation_backend).display_name
+            if generation_backend in LOCAL_CLI_GENERATION_BACKEND_IDS
+            else ""
+        )
         agent_backend = normalize_backend_id(
             effective_map.get("AGENT_GENERATION_BACKEND"),
             default=AUTO_AGENT_BACKEND_ID,
@@ -3665,7 +3676,7 @@ class SystemConfigService:
                             "agent",
                             True,
                             "needs_action",
-                            "普通分析使用 Codex CLI；但当前 LiteLLM Agent 路径继承的是 Hermes-only 模型，"
+                            f"普通分析使用 {local_cli_display_name}；但当前 LiteLLM Agent 路径继承的是 Hermes-only 模型，"
                             "Hermes Phase 3 不支持 Agent 工具调用。",
                             "如需使用 Ask-Stock Agent，请配置非 Hermes 的 AGENT_LITELLM_MODEL，"
                             "或配置包含非 Hermes deployment 的 mixed Agent route。",
@@ -3676,7 +3687,7 @@ class SystemConfigService:
                         "agent",
                         True,
                         "configured",
-                        f"普通分析使用 Codex CLI；Agent 工具调用仍使用 LiteLLM 主模型: {litellm_model}",
+                        f"普通分析使用 {local_cli_display_name}；Agent 工具调用仍使用 LiteLLM 主模型: {litellm_model}",
                     )
                 if agent_backend == LITELLM_BACKEND_ID:
                     return self._setup_check(
@@ -3743,9 +3754,9 @@ class SystemConfigService:
                 "请选择非 Hermes Agent 模型，或配置 mixed route 中的非 Hermes deployment。",
             )
         configured_agent_message = f"已配置 Agent 主模型: {agent_model}"
-        if generation_backend == CODEX_CLI_BACKEND_ID:
+        if generation_backend in LOCAL_CLI_GENERATION_BACKEND_IDS:
             configured_agent_message = (
-                f"普通分析使用 Codex CLI；Agent 工具调用仍使用 LiteLLM 主模型: {agent_model}"
+                f"普通分析使用 {local_cli_display_name}；Agent 工具调用仍使用 LiteLLM 主模型: {agent_model}"
             )
         if _uses_direct_env_provider(agent_model):
             return self._setup_check(

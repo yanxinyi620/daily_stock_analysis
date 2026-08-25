@@ -7,29 +7,73 @@ import type {
   BacktestResultItem,
   PerformanceMetrics,
   BacktestPhaseFilter,
+  BacktestTaskAccepted,
+  BacktestTaskStatus,
+  BacktestRunHistoryResponse,
 } from '../types/backtest';
+
+const BACKTEST_POLL_INTERVAL_MS = 750;
+
+function buildRunPayload(params: BacktestRunRequest): Record<string, unknown> {
+  const requestData: Record<string, unknown> = {};
+  if (params.code?.trim()) requestData.code = params.code.trim();
+  if (params.force) requestData.force = params.force;
+  if (params.evalWindowDays != null) requestData.eval_window_days = params.evalWindowDays;
+  if (params.minAgeDays != null) requestData.min_age_days = params.minAgeDays;
+  if (params.analysisDateFrom) requestData.analysis_date_from = params.analysisDateFrom;
+  if (params.analysisDateTo) requestData.analysis_date_to = params.analysisDateTo;
+  if (params.limit != null) requestData.limit = params.limit;
+  return requestData;
+}
+
+const waitForNextPoll = () => new Promise<void>((resolve) => {
+  window.setTimeout(resolve, BACKTEST_POLL_INTERVAL_MS);
+});
+
+async function waitForBacktestTask(taskId: string): Promise<BacktestRunResponse> {
+  while (true) {
+    const statusResponse = await apiClient.get<Record<string, unknown>>(
+      `/api/v1/backtest/tasks/${encodeURIComponent(taskId)}`,
+    );
+    const status = toCamelCase<BacktestTaskStatus>(statusResponse.data);
+    if (status.status === 'completed' && status.result) return status.result;
+    if (status.status === 'completed') throw new Error('回测任务已完成，但未返回结果');
+    if (status.status === 'failed') throw new Error(status.error || status.message || '回测任务执行失败');
+    await waitForNextPoll();
+  }
+}
 
 // ============ API ============
 
 export const backtestApi = {
+  getRuns: async (params: { page?: number; limit?: number } = {}): Promise<BacktestRunHistoryResponse> => {
+    const queryParams = { page: params.page ?? 1, limit: params.limit ?? 20 };
+    const response = await apiClient.get<Record<string, unknown>>('/api/v1/backtest/runs', {
+      params: queryParams,
+    });
+    return toCamelCase<BacktestRunHistoryResponse>(response.data);
+  },
+
+  getCurrentTask: async (): Promise<BacktestTaskStatus | null> => {
+    const response = await apiClient.get<Record<string, unknown> | null>(
+      '/api/v1/backtest/tasks/current',
+    );
+    return toCamelCase<BacktestTaskStatus | null>(response.data);
+  },
+
+  waitForTask: waitForBacktestTask,
+
   /**
    * Trigger backtest evaluation
    */
   run: async (params: BacktestRunRequest = {}): Promise<BacktestRunResponse> => {
-    const requestData: Record<string, unknown> = {};
-    if (params.code?.trim()) requestData.code = params.code.trim();
-    if (params.force) requestData.force = params.force;
-    if (params.evalWindowDays != null) requestData.eval_window_days = params.evalWindowDays;
-    if (params.minAgeDays != null) requestData.min_age_days = params.minAgeDays;
-    if (params.analysisDateFrom) requestData.analysis_date_from = params.analysisDateFrom;
-    if (params.analysisDateTo) requestData.analysis_date_to = params.analysisDateTo;
-    if (params.limit != null) requestData.limit = params.limit;
-
-    const response = await apiClient.post<Record<string, unknown>>(
-      '/api/v1/backtest/run',
-      requestData,
+    const acceptedResponse = await apiClient.post<Record<string, unknown>>(
+      '/api/v1/backtest/tasks',
+      buildRunPayload(params),
     );
-    return toCamelCase<BacktestRunResponse>(response.data);
+    const accepted = toCamelCase<BacktestTaskAccepted>(acceptedResponse.data);
+
+    return waitForBacktestTask(accepted.taskId);
   },
 
   /**

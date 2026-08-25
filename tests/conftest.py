@@ -5,6 +5,9 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import os
+import shutil
+import tempfile
 import time
 import threading
 from collections.abc import Awaitable, Callable
@@ -20,6 +23,28 @@ import starlette.testclient
 from anyio._backends import _asyncio
 
 T = TypeVar("T")
+
+
+# Establish a test-only default before test modules import application config.
+# Individual tests may temporarily override DATABASE_PATH, but restoring it now
+# returns to this isolated database instead of the application's live database.
+_ORIGINAL_DATABASE_PATH = os.environ.get("DATABASE_PATH")
+_PYTEST_DATABASE_DIR = tempfile.mkdtemp(prefix="daily-stock-analysis-pytest-")
+os.environ["DATABASE_PATH"] = os.path.join(_PYTEST_DATABASE_DIR, "stock_analysis.db")
+
+
+def pytest_sessionfinish(session, exitstatus) -> None:
+    del session, exitstatus
+    try:
+        from src.storage import DatabaseManager
+
+        DatabaseManager.reset_instance()
+    finally:
+        if _ORIGINAL_DATABASE_PATH is None:
+            os.environ.pop("DATABASE_PATH", None)
+        else:
+            os.environ["DATABASE_PATH"] = _ORIGINAL_DATABASE_PATH
+        shutil.rmtree(_PYTEST_DATABASE_DIR, ignore_errors=True)
 
 _original_call_soon_threadsafe = asyncio.BaseEventLoop.call_soon_threadsafe
 

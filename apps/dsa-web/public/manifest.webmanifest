@@ -1,0 +1,15 @@
+{
+  "name": "Daily Stock Analysis",
+  "short_name": "DSA",
+  "description": "移动端股票分析、问股与任务工作台",
+  "lang": "zh-CN",
+  "start_url": "/m",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#07131b",
+  "theme_color": "#07131b",
+  "icons": [
+    { "src": "/icons/dsa-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icons/dsa-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

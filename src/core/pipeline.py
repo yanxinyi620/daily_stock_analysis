@@ -15,6 +15,7 @@ import logging
 import inspect
 import threading
 import time
+from pathlib import Path
 import uuid
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -52,6 +53,7 @@ from src.search_service import SearchService
 from src.analysis_context_pack_prompt import format_analysis_context_pack_prompt_section
 from src.analysis_context_pack_overview import render_analysis_context_pack_overview
 from src.market_phase_summary import MARKET_PHASE_SUMMARY_KEY, render_market_phase_summary
+from src.llm.backend_registry import LOCAL_CLI_GENERATION_BACKEND_IDS
 from src.daily_market_context_guardrail import apply_daily_market_context_guardrail
 from src.agent.final_explanation import (
     PipelineActionAdjustment,
@@ -88,6 +90,7 @@ from src.services.decision_signal_extractor import (
     extract_and_persist_from_analysis_result,
     resolve_decision_signal_action_fields,
 )
+from src.services.decision_signal_service import DecisionSignalService
 from src.services.decision_signal_summary import summarize_decision_signal
 from src.enums import ReportType
 from src.stock_analyzer import StockTrendAnalyzer, TrendAnalysisResult
@@ -271,6 +274,8 @@ class StockAnalysisPipeline:
         self._daily_market_context_service_lock = threading.Lock()
         self._concept_rankings_cache_lock = threading.Lock()
         self._concept_rankings_cache: Dict[str, Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]] = {}
+        self._last_local_report_path: Optional[str] = None
+        self._last_local_report_error: Optional[str] = None
         
         # 初始化搜索服务（可选，初始化失败不应阻断主分析流程）
         try:
@@ -747,8 +752,15 @@ class StockAnalysisPipeline:
             self._emit_progress(64, f"{stock_name}：正在请求 LLM 生成报告")
             llm_started_at = time.monotonic()
             try:
+                generation_backend_id = self.analyzer.get_generation_backend_id()
+                diagnostic_start_model = (
+                    generation_backend_id
+                    if generation_backend_id in LOCAL_CLI_GENERATION_BACKEND_IDS
+                    else getattr(self.config, "litellm_model", None)
+                )
                 record_llm_run_started(
-                    model=getattr(self.config, "litellm_model", None),
+                    provider=generation_backend_id,
+                    model=diagnostic_start_model,
                     call_type="analysis",
                 )
                 result = self.analyzer.analyze(
@@ -2657,6 +2669,7 @@ class StockAnalysisPipeline:
                 report_type=report_type,
                 portfolio_context=portfolio_context,
                 profile_source="auto_default",
+                service=DecisionSignalService(db_manager=self.db),
             )
             if isinstance(signal_result, dict):
                 summary = summarize_decision_signal(signal_result.get("item"))
@@ -3119,6 +3132,9 @@ class StockAnalysisPipeline:
         send_notification: bool = True,
         merge_notification: bool = False,
         current_time: Optional[datetime] = None,
+        batch_item_callback: Optional[
+            Callable[[str, str, Optional[AnalysisResult], Optional[str], int, int], None]
+        ] = None,
     ) -> List[AnalysisResult]:
         """
         运行完整的分析流程
@@ -3219,10 +3235,15 @@ class StockAnalysisPipeline:
             # 收集结果
             for idx, future in enumerate(as_completed(future_to_code)):
                 code = future_to_code[future]
+                callback_status = "failed"
+                callback_result: Optional[AnalysisResult] = None
+                callback_error: Optional[str] = None
                 try:
                     result = future.result()
                     if result and result.success:
                         results.append(result)
+                        callback_status = "completed"
+                        callback_result = result
                         if single_stock_notify and send_notification and not dry_run:
                             self._send_single_stock_notification(
                                 result,
@@ -3230,6 +3251,7 @@ class StockAnalysisPipeline:
                                 fallback_code=code,
                             )
                     elif result and not result.success:
+                        callback_error = result.error_message or "分析未成功"
                         logger.warning(
                             f"[{code}] 分析结果标记为失败，不计入汇总: "
                             f"{result.error_message or '未知原因'}"
@@ -3245,7 +3267,21 @@ class StockAnalysisPipeline:
                         time.sleep(analysis_delay)
 
                 except Exception as e:
+                    callback_error = str(e)
                     logger.error(f"[{code}] 任务执行失败: {e}")
+                finally:
+                    if batch_item_callback is not None:
+                        try:
+                            batch_item_callback(
+                                code,
+                                callback_status,
+                                callback_result,
+                                callback_error,
+                                idx + 1,
+                                len(stock_codes),
+                            )
+                        except Exception as callback_exc:
+                            logger.warning("[%s] 批量进度回调失败（忽略）: %s", code, callback_exc)
         
         # 统计
         elapsed_time = time.time() - start_time
@@ -3297,26 +3333,6 @@ class StockAnalysisPipeline:
         fallback_code: Optional[str] = None,
     ) -> None:
         """发送单股通知，供直接单股入口和批量串行推送共用。"""
-        if not self.notifier.is_available():
-            notification_run = self._build_notification_run_snapshot(
-                channel="report",
-                status="not_configured",
-                success=False,
-                attempts=0,
-            )
-            record_notification_run(
-                channel="report",
-                status="not_configured",
-                success=False,
-                attempts=0,
-            )
-            self._refresh_saved_diagnostic_snapshot(
-                result=result,
-                fallback_code=fallback_code,
-                notification_run=notification_run,
-            )
-            return
-
         stock_code = getattr(result, "code", None) or fallback_code or "unknown"
         notify_lock = getattr(self, "_single_stock_notify_lock", None)
         if notify_lock is None:
@@ -3337,6 +3353,36 @@ class StockAnalysisPipeline:
                 else:
                     report_content = self.notifier.generate_single_stock_report(result)
                     logger.info(f"[{stock_code}] 使用精简报告格式")
+
+                save_report = getattr(self.notifier, "save_report_to_file", None)
+                if callable(save_report):
+                    try:
+                        date_str = datetime.now().strftime('%Y%m%d')
+                        filename = f"report_{date_str}_{stock_code}.md"
+                        filepath = save_report(report_content, filename=filename)
+                        logger.info(f"[{stock_code}] 单股报告已保存到本地: {filepath}")
+                    except Exception as exc:
+                        logger.warning(f"[{stock_code}] 单股报告保存失败: {exc}")
+
+                if not self.notifier.is_available():
+                    notification_run = self._build_notification_run_snapshot(
+                        channel="report",
+                        status="not_configured",
+                        success=False,
+                        attempts=0,
+                    )
+                    record_notification_run(
+                        channel="report",
+                        status="not_configured",
+                        success=False,
+                        attempts=0,
+                    )
+                    self._refresh_saved_diagnostic_snapshot(
+                        result=result,
+                        fallback_code=fallback_code,
+                        notification_run=notification_run,
+                    )
+                    return
 
                 send_kwargs: Dict[str, Any] = {
                     "email_stock_codes": [stock_code],
@@ -3391,14 +3437,72 @@ class StockAnalysisPipeline:
         self,
         results: List[AnalysisResult],
         report_type: ReportType = ReportType.SIMPLE,
-    ) -> None:
+    ) -> Optional[str]:
         """保存分析报告到本地文件（与通知推送解耦）"""
+        self._last_local_report_path = None
+        self._last_local_report_error = None
+        report: Optional[str] = None
         try:
             report = self._generate_aggregate_report(results, report_type)
-            filepath = self.notifier.save_report_to_file(report)
-            logger.info(f"决策仪表盘日报已保存: {filepath}")
         except Exception as e:
+            self._last_local_report_error = str(e)
+            logger.error("生成本地报告内容失败: %s", e)
+            return None
+
+        try:
+            filepath = self.notifier.save_report_to_file(report)
+            if filepath:
+                filepath = str(filepath)
+                self._last_local_report_path = filepath
+                logger.info(f"决策仪表盘日报已保存: {filepath}")
+                return filepath
+            self._last_local_report_error = "notifier returned empty report path"
+            logger.error("保存本地报告失败: 通知服务未返回报告路径")
+        except Exception as e:
+            self._last_local_report_error = str(e)
             logger.error(f"保存本地报告失败: {e}")
+
+        logger.warning("尝试回退到本地文件系统路径保存聚合报告")
+        fallback_path = self._fallback_save_report_to_file(report)
+        if fallback_path:
+            self._last_local_report_path = fallback_path
+            self._last_local_report_error = None
+            logger.warning("回退保存本地报告成功: %s", fallback_path)
+            return fallback_path
+        if self._last_local_report_error is None:
+            self._last_local_report_error = "fallback local report save failed"
+            return None
+        return None
+
+    @staticmethod
+    def _default_report_filename() -> str:
+        """Build default local report filename (aligned with notifier defaults)."""
+        date_str = datetime.now().strftime('%Y%m%d')
+        return f"report_{date_str}.md"
+
+    @staticmethod
+    def _report_output_dir() -> Path:
+        """Default report output directory (kept same as NotificationService behavior)."""
+        return Path(__file__).resolve().parents[2] / 'reports'
+
+    @classmethod
+    def _fallback_save_report_to_file(
+        cls,
+        content: str,
+        filename: Optional[str] = None,
+    ) -> Optional[str]:
+        """Persist report content via local filesystem as resilient fallback."""
+        try:
+            reports_dir = cls._report_output_dir()
+            reports_dir.mkdir(parents=True, exist_ok=True)
+            filename = filename or cls._default_report_filename()
+            filepath = reports_dir / filename
+            filepath.write_text(content, encoding='utf-8')
+            logger.info("决策仪表盘日报已回退写入: %s", filepath)
+            return str(filepath)
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            logger.error("回退写入报告失败: %s", exc)
+            return None
 
     def _send_notifications(
         self,

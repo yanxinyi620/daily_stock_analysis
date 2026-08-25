@@ -412,7 +412,7 @@ class AnalysisHistoryTestCase(unittest.TestCase):
                 report_type="simple",
                 news_content="news",
                 context_snapshot={"market_phase_summary": _market_phase_summary()},
-                save_snapshot=True,
+                save_snapshot=False,
             ),
             0,
         )
@@ -488,7 +488,7 @@ class AnalysisHistoryTestCase(unittest.TestCase):
                 report_type=report_type,
                 news_content="新闻摘要",
                 context_snapshot=None,
-                save_snapshot=False,
+                save_snapshot=True,
             )
             self.assertGreater(saved, 0)
 
@@ -787,6 +787,87 @@ class AnalysisHistoryTestCase(unittest.TestCase):
                 db_manager=self.db,
             )
             self.assertEqual(response.items[0].region, "jp,kr")
+
+    def test_composite_history_list_exposes_sanitized_run_summary(self) -> None:
+        composite_result = AnalysisResult(
+            code="COMPOSITE",
+            name="今日综合分析",
+            sentiment_score=62,
+            trend_prediction="综合",
+            operation_advice="查看综合报告",
+            analysis_summary="2 支股票完成，1 支失败；大盘复盘 completed",
+        )
+        self.assertGreater(
+            self.db.save_analysis_history(
+                result=composite_result,
+                query_id="composite_history_summary",
+                report_type="composite_analysis",
+                news_content="综合报告正文",
+                context_snapshot={
+                    "task_type": "composite_analysis",
+                    "stock_codes": ["600410", "600519", "000858"],
+                    "failed_stocks": ["600410"],
+                    "market_review_status": "completed",
+                    "notification_requested": True,
+                    "report_path": "/private/report/path.md",
+                },
+                save_snapshot=True,
+            ),
+            0,
+        )
+
+        payload = HistoryService(self.db).get_history_list(
+            stock_code="COMPOSITE",
+            report_type="composite_analysis",
+            page=1,
+            limit=10,
+        )
+
+        self.assertEqual(payload["total"], 1)
+        self.assertEqual(
+            payload["items"][0]["composite_summary"],
+            {
+                "stock_codes": ["600410", "600519", "000858"],
+                "failed_stocks": ["600410"],
+                "market_review_status": "completed",
+                "notification_requested": True,
+            },
+        )
+        self.assertNotIn("report_path", payload["items"][0]["composite_summary"])
+
+        stock_result = self._build_result()
+        self.assertGreater(
+            self.db.save_analysis_history(
+                result=stock_result,
+                query_id="ordinary_history_without_composite_summary",
+                report_type="detailed",
+                news_content="个股正文",
+                context_snapshot=None,
+                save_snapshot=False,
+            ),
+            0,
+        )
+        stock_payload = HistoryService(self.db).get_history_list(
+            stock_code="600519",
+            report_type="detailed",
+            page=1,
+            limit=10,
+        )
+        self.assertIsNone(stock_payload["items"][0]["composite_summary"])
+        self.assertIsNone(payload["items"][0]["action"])
+        self.assertIsNone(payload["items"][0]["action_label"])
+
+        if get_history_list is not None:
+            response = get_history_list(
+                stock_code="COMPOSITE",
+                report_type="composite_analysis",
+                start_date=None,
+                end_date=None,
+                page=1,
+                limit=10,
+                db_manager=self.db,
+            )
+            self.assertEqual(response.items[0].composite_summary.stock_codes, ["600410", "600519", "000858"])
 
     def test_distinct_stock_bar_excludes_market_review_records_by_default(self) -> None:
         """The stock bar aggregation should not mix MARKET into ordinary stock entries."""
@@ -1863,6 +1944,31 @@ class AnalysisHistoryTestCase(unittest.TestCase):
         markdown = HistoryService(self.db).get_markdown_report(str(record_id))
 
         self.assertEqual(markdown, "# 🎯 大盘复盘\n\n## 今日大盘\n\n复盘正文")
+
+    def test_history_markdown_returns_persisted_composite_report(self) -> None:
+        """Composite history must return its saved full report instead of a stock summary."""
+        full_report = "# 今日综合分析\n\n## 大盘复盘\n\n市场正文\n\n## 个股决策仪表盘\n\n个股正文"
+        result = AnalysisResult(
+            code="COMPOSITE",
+            name="今日综合分析",
+            sentiment_score=60,
+            trend_prediction="综合",
+            operation_advice="查看综合报告",
+            analysis_summary="2 支股票完成，0 支失败",
+            raw_response=full_report,
+        )
+
+        record_id = self.db.save_analysis_history(
+            result=result,
+            query_id="composite_query_001",
+            report_type="composite_analysis",
+            news_content=full_report,
+            context_snapshot={"task_type": "composite_analysis"},
+        )
+
+        markdown = HistoryService(self.db).get_markdown_report(str(record_id))
+
+        self.assertEqual(markdown, full_report)
 
     def test_history_markdown_collapses_unavailable_chip_structure(self) -> None:
         result = AnalysisResult(

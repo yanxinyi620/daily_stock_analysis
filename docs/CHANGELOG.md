@@ -8,9 +8,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [改进] 历史趋势记录增加数据质量字段，精简结果与查看文案，并将模型展示限制为 10 个字符
+- [修复] 综合分析历史记录恢复综合评分展示，并将未记录模型改为明确提示
+- [改进] 首页历史栏固定综合分析与大盘复盘在顶部，普通个股继续按原规则排序
+- [改进] 历史趋势数据质量列仅显示质量分值
+- [改进] 历史趋势质量字段使用更紧凑的“质量”标题
+- [改进] 大盘复盘历史趋势隐藏不适用的个股行情字段
+- [改进] 大盘复盘历史列表默认隐藏个股分析触发的自动市场上下文记录
+- [修复] 大盘复盘历史记录保存实际使用的模型名称
+- [改进] 大盘复盘历史记录结果列显示盘面信号对应的市场状态
+- [改进] 大盘复盘历史趋势的结果列不再显示无意义的“查看复盘”
+
+- [修复] 大盘复盘历史趋势使用报告中的真实盘面信号分数，兼容回读旧记录
+
+- [测试] 隔离 pytest 默认数据库，避免重置数据库单例后将模拟用量写入正式数据库
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
+
+- [修复] 修复生成后端冒烟测试仍在运行时 Web 设置页因通用 30 秒请求上限提前误报超时的问题。
+- [修复] 修复设置页 Agent 渠道诊断将 OpenCode CLI、Claude Code CLI 错误显示为 Codex CLI 的问题。
+- [修复] 修复本地 CLI 生成后端未继承标准代理环境变量，导致 Codex CLI 等后端在代理网络中执行超时的问题。
+- [新功能] Web 首页新增“综合分析”，一次执行全部自选股与大盘复盘，保存一份综合报告，并按首页“推送通知”开关决定是否发送合并通知；部分失败时继续完成其余项目并列出失败项。
+- [改进] Web 首页自选股快速添加框支持按代码或名称匹配股票；选择候选仅加入自选，不会触发分析。
+- [改进] Web 首页为综合分析历史记录提供个股报告风格的任务摘要，默认不展开完整正文，移除单股自选、追问、趋势和策略点位操作，并支持查看完整报告或重新运行。
+- [修复] 修复综合分析历史的“完整分析报告”错误生成普通股票摘要、未返回已保存完整综合正文的问题。
+- [修复] 修复综合分析摘要因前端字段命名转换而无法显示个股、大盘和运行信息的问题，并补充成功率、综合评分、报告语言与股票范围标签。
+- [修复] 决策信号提取复用分析流水线注入的数据库连接，避免测试 Mock 被绕过后将测试信号写入开发数据库。
+- [文档] 新增面向产品、技术及非技术受众的项目介绍 HTML，以通俗中文说明系统用途、主要功能和八步分析过程，展示选股、每日综合分析、单股分析、问股、回测、自选股与提醒之间的衔接方式，并用贵州茅台历史案例说明报告生成、结论来源和使用限制；完整版重组为七章连续阅读结构，精简版保留六章快速阅读结构，两版均以全宽真实界面示例展示 Web 工作台和提醒中心。
+- [新功能] Web 选股页新增当前结果与历史记录切换，展示已保存的运行摘要，并支持恢复任一次历史选股的完整候选结果。
+- [新功能] WebUI 新增 `/m` 移动日常使用端，以五个底部入口串联自选、单股/综合分析、问股、任务、移动报告和选股，并提供最小 PWA 安装元数据；高级配置和敏感值继续仅由桌面设置页管理。
+- [修复] 修复移动端自选页仅读取全局最新六条历史，导致较早完成分析的股票丢失名称和报告入口，并将列表卡片统一为简短操作建议、完整内容进入报告页查看。
+- [修复] 修复综合分析成功完成大盘复盘后未写入独立大盘历史的问题；每次成功运行现在保留若干个股历史、一条大盘历史和一条综合历史，同时仍只发送一次综合通知。
+- [改进] 综合报告操作统一为“重新分析、历史记录、完整分析报告”，新增不含单股价格指标的综合历史时间线，可查看历次股票范围、完成情况、大盘状态、评分、通知和模型并切换报告。
+- [修复] 股票分析 JSON 校验允许唯一对象前后带少量说明文字，继续拒绝多对象和核心字段错误，并让回退校验日志显示真实模型与失败原因。
+- [修复] Web 回测改为后台任务轮询，刷新页面后可恢复当前运行状态并阻止重复提交，避免补取外部日线超过通用请求时限后误报超时；候选、结果与汇总统一排除大盘复盘和综合分析，旧汇总口径不一致时按有效个股结果重算。
+- [新功能] 回测新增独立运行历史，持久化每次 Web/API 任务的参数、时间、状态与执行汇总，页面支持在结果和运行历史间切换并按原参数重新运行。
+- [修复] 修复本地 CLI 回退到 LiteLLM 后成功日志和用量 transport 仍误标为 CLI、运行流程遗漏主后端及模型失败尝试的问题；流程现按真实顺序展示脱敏失败原因与最终成功模型。
+
+- [新功能] Agent 工具调用支持按类别（data/search/analysis/action/market）配置默认超时，并允许单工具声明 `timeout_seconds`；有效超时按 first-wins 优先级解析（显式 per-run `tool_call_timeout_seconds` > 单工具显式 `timeout_seconds` > 类别默认 > 无限制），剩余 wall-clock 预算仅作不可突破的外层 cap，超时后返回结构化 `{"timeout": true}` 错误（标记 `retriable: false` 并写入 `non_retriable_tool_results` 防重试重复执行）供 Agent 继续执行而非中断循环（fixes #1890）。
+- [修复] Agent 工具注册表（`src/agent/factory.get_tool_registry`）由模块级缓存改为按「类别超时映射的值」比对失效，规避 CPython 回收对象后地址复用（`id(config)` 相同）导致配置 reload 后的 `Config` 被误判为未变、沿用过期超时的真 bug；新增 `_coerce_config_timeout` 类型白名单，使调用方传入 `MagicMock` / 缺属性 stub / 脏字符串（如 `float(MagicMock())` 静默得到 1.0）时降级为「无类别限制」而非崩溃或强加 1 秒超时；`build_agent_executor(config)` / `build_agent_chat_executor(config)` 现已把调用方 `config` 透传给 `get_tool_registry(config)`（不再无参调用冻结首构 registry）；`main._reload_runtime_config` 与 `SystemConfigService._reload_runtime_singletons`（及 `update()`→`reload_now` 路径）在配置热重载时调用 `reset_tool_registry()` 强制重建；回归测试补充「传入新 config 后 registry 重建」「reload 后新超时应生效」及「builder 透传 config」三类场景（#1890 的 review follow-up，闭环 OR-COM-dd1e8fa7 / OR-COM-bff42110）
+- [修复] Agent 工具超时 review 闭环（fixes #1890 的 4 个 blocker）：超时解析由 min 契约改为 first-wins（显式 per-run `tool_call_timeout_seconds` > 单工具 `ToolDefinition.timeout_seconds` > 类别默认 > 无限制，剩余 wall-clock 预算只作不可突破的外层 cap；research 路径不再传 `tool_call_timeout_seconds` 以免覆盖类别限制）；超时结果标记 `retriable: false` 并写入 `non_retriable_tool_results` 阻断 LLM 同调用重试重入，且超时触发时为仍在后台运行的 handler 武装协作取消信号（`is_tool_cancellation_requested()` 与既有 `check_tool_execution()` 检查点均响应，handler 从不轮询则行为不变），作为 review 要求的「handler 内协作取消」缓解，规避 Python 线程无法 force-stop 导致的重复执行与副作用；`_coerce_config_timeout` 对 `inf`/`nan`/负数降级为「无限制」，根绝 `future.result(timeout=inf)` 触发 `OverflowError`；`get_tool_registry` / `reset_tool_registry` 加 `threading.Lock` 双检锁，且重建后返回本次构建的局部 registry（而非全局缓存），消除并发重建竞态与跨调用超时串扰；`@tool` 装饰器将 `ToolPolicy.timeout_seconds` 折叠进 `ToolDefinition` 单一来源；统一单/并行工具超时包装（单一 executor + deadline 驱动的 wait loop，消除并行路径嵌套 executor 与线程翻倍，duration 精确到各工具自身超时值），并新增快慢工具混合并行回归；同步 `docs/full-guide_EN.md` 的超时环境变量文档；测试覆盖 first-wins、non-retriable、协作取消接线、finite 校验、缓存线程安全与快慢混合并行。
+- [修复] 按最新 review 复核收敛 3 处正确性问题（OR-COM-7f3d3f5b / 3d6b61f8 / a1e8b0c2）：`BaseAgent._filtered_registry()` 携带源 registry 的类别超时映射（工具子集仍生效类别上限，不再绕过 #1890 类别超时）；并行批次 >5 时排队调用的 per-tool 超时自 worker 实际开始起算（不再提交即烧预算导致对未启动调用的假超时）；`get_tool_registry()` 缓存命中快路径在锁内读取一致对（消除与 `reset_tool_registry()` 竞态返回 `None` 或错配 registry）。新增对应回归测试。
+- [改进] AIHubMix 注册与引流链接统一使用 inferera.com，改善中国大陆网络直连体验。
+- [修复] 单股推送模式在未配置通知渠道时仍会落盘本地个股报告；CLI 启动分析若因空股票列表、个股结果全失败或本地报告保存失败而未生成报告，会显式返回失败并记录原因。
+- [修复] 合并推送模式下即使个股汇总报告落盘失败，仍会先发送已有的合并通知；仅启用大盘复盘但最终未生成任何复盘内容时，分析任务会显式返回失败。
 
 ## [3.30.0] - 2026-08-09
 

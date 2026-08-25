@@ -44,6 +44,8 @@ from api.v1.schemas.analysis import (
     DuplicateTaskErrorResponse,
     MarketReviewRequest,
     MarketReviewAccepted,
+    CompositeAnalysisRequest,
+    CompositeTaskAccepted,
 )
 from api.v1.schemas.common import ErrorResponse
 from api.v1.schemas.history import (
@@ -82,6 +84,7 @@ from src.services.task_queue import (
     get_task_queue,
     DuplicateTaskError,
     TaskStatus as TaskStatusEnum,
+    CompositeTaskConflictError,
 )
 from src.services.run_diagnostics import build_run_diagnostic_summary
 from src.services.run_flow import build_task_run_flow_snapshot
@@ -583,6 +586,119 @@ def trigger_market_review(
     )
 
 
+@router.post(
+    "/composite",
+    response_model=CompositeTaskAccepted,
+    status_code=202,
+    responses={409: {"description": "组合任务或所选股票正在执行"}},
+    summary="触发自选股与大盘综合分析",
+)
+def trigger_composite_analysis(
+    request: CompositeAnalysisRequest,
+    config: Config = Depends(get_config_dep),
+) -> CompositeTaskAccepted | JSONResponse:
+    """Atomically submit one composite parent task for a frozen watchlist."""
+    resolved = [_resolve_and_normalize_input(code) for code in request.stock_codes]
+    stock_codes = list(dict.fromkeys(normalize_stock_code(code) for code in resolved if code))
+    if not stock_codes:
+        raise api_error(400, "validation_error", "组合分析股票列表不能为空")
+
+    report_language = normalize_report_language(
+        request.report_language,
+        default=getattr(config, "report_language", "zh") or "zh",
+    )
+    effective_region = request.region or (
+        normalize_market_review_region_lenient(config.market_review_region) or "cn"
+    )
+    lock_token = _try_acquire_market_review_lock(config)
+    if lock_token is None:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": "composite_task_conflict",
+                "message": "大盘复盘或综合分析正在执行中，请稍后再试",
+                "stock_conflicts": {},
+                "market_review_conflict": True,
+                "composite_task_id": None,
+            },
+        )
+
+    from src.services.composite_analysis_service import (
+        CompositeAnalysisRequestSnapshot,
+        CompositeAnalysisService,
+    )
+
+    snapshot = CompositeAnalysisRequestSnapshot(
+        stock_codes=tuple(stock_codes),
+        notify=request.notify,
+        report_type=request.report_type,
+        report_language=report_language,
+        skills=tuple(request.skills or ()),
+        region=effective_region,
+    )
+    queue = get_task_queue()
+    service = CompositeAnalysisService(config)
+
+    def run_task(task_id: str) -> Dict[str, Any]:
+        try:
+            return service.run(
+                snapshot,
+                task_id=task_id,
+                progress_callback=lambda **state: queue.update_composite_state(task_id, **state),
+                market_lock_token=lock_token,
+                cancel_requested=lambda: queue.is_composite_cancel_requested(task_id),
+            )
+        finally:
+            _release_market_review_lock(lock_token)
+
+    try:
+        task = queue.submit_composite_task(
+            run_task,
+            stock_codes=stock_codes,
+            notify=request.notify,
+            report_language=report_language,
+            skills=request.skills,
+            region=effective_region,
+        )
+    except CompositeTaskConflictError as exc:
+        _release_market_review_lock(lock_token)
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": "composite_task_conflict",
+                "message": "所选股票或综合分析任务正在执行中",
+                "stock_conflicts": exc.stock_conflicts,
+                "market_review_conflict": exc.market_review_conflict,
+                "composite_task_id": exc.composite_task_id,
+            },
+        )
+    except Exception:
+        _release_market_review_lock(lock_token)
+        raise
+
+    return CompositeTaskAccepted(
+        task_id=task.task_id,
+        trace_id=_get_task_trace_id(task),
+        status="pending",
+        message=task.message or "综合分析任务已提交",
+        stock_codes=stock_codes,
+        notify=request.notify,
+        region=effective_region,
+    )
+
+
+@router.post("/composite/{task_id}/cancel", summary="取消综合分析")
+def cancel_composite_analysis(task_id: str) -> Dict[str, Any]:
+    task = get_task_queue().request_composite_cancel(task_id)
+    if task is None:
+        raise api_error(404, "task_not_found", "综合分析任务不存在")
+    return {
+        "task_id": task.task_id,
+        "status": task.status.value,
+        "message": task.message,
+    }
+
+
 # ============================================================
 # GET /tasks - 获取任务列表
 # ============================================================
@@ -646,6 +762,9 @@ def get_task_list(
             analysis_phase=t.analysis_phase,
             skills=getattr(t, "skills", None),
             region=t.region,
+            task_type=getattr(t, "task_type", "stock_analysis"),
+            parent_task_id=getattr(t, "parent_task_id", None),
+            composite=getattr(t, "composite", None),
         )
         for t in all_tasks
     ]
@@ -1088,6 +1207,9 @@ def get_analysis_status(task_id: str) -> TaskStatus:
             selection_source=task.selection_source,
             analysis_phase=task.analysis_phase,
             skills=getattr(task, "skills", None),
+            task_type=getattr(task, "task_type", "stock_analysis"),
+            parent_task_id=getattr(task, "parent_task_id", None),
+            composite=getattr(task, "composite", None),
         )
     
     # 2. 从数据库查询已完成的记录

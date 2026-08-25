@@ -1421,6 +1421,24 @@ def test_env_allowlist_and_denylist(monkeypatch) -> None:
     assert "AUTHORIZATION" not in child_env
 
 
+def test_env_allowlist_preserves_standard_proxy_settings() -> None:
+    source = {
+        "HTTP_PROXY": "http://proxy.example:7890",
+        "https_proxy": "http://proxy.example:7890",
+        "ALL_PROXY": "socks5://proxy.example:7891",
+        "no_proxy": "127.0.0.1,localhost",
+        "PROXY_AUTHORIZATION": "Basic secret",
+    }
+
+    child_env = build_local_cli_env(source)
+
+    assert child_env["HTTP_PROXY"] == source["HTTP_PROXY"]
+    assert child_env["https_proxy"] == source["https_proxy"]
+    assert child_env["ALL_PROXY"] == source["ALL_PROXY"]
+    assert child_env["no_proxy"] == source["no_proxy"]
+    assert "PROXY_AUTHORIZATION" not in child_env
+
+
 def test_env_allowlist_preserves_windows_runtime_context() -> None:
     source = {
         "Path": r"C:\Users\tester\AppData\Local\Microsoft\WindowsApps",

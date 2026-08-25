@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -34,6 +34,54 @@ class BacktestRunResponse(BaseModel):
     )
     message: Optional[str] = Field(None, description="空结果或降级时的诊断说明")
     diagnostics: Dict[str, Any] = Field(default_factory=dict, description="回测筛选与诊断信息")
+
+
+class BacktestTaskAccepted(BaseModel):
+    task_id: str
+    status: str
+    message: Optional[str] = None
+    reused: bool = False
+
+
+class BacktestTaskStatus(BaseModel):
+    task_id: str
+    status: str
+    progress: int = 0
+    message: Optional[str] = None
+    error: Optional[str] = None
+    result: Optional[BacktestRunResponse] = None
+
+
+class BacktestRunHistoryItem(BaseModel):
+    run_id: str
+    task_id: Optional[str] = None
+    source: str
+    status: str
+    code: Optional[str] = None
+    force: bool = False
+    eval_window_days: Optional[int] = None
+    min_age_days: Optional[int] = None
+    analysis_date_from: Optional[date] = None
+    analysis_date_to: Optional[date] = None
+    limit: int
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    processed: Optional[int] = None
+    saved: Optional[int] = None
+    completed: Optional[int] = None
+    insufficient: Optional[int] = None
+    errors: Optional[int] = None
+    message: Optional[str] = None
+    diagnostics: Dict[str, Any] = Field(default_factory=dict)
+    error: Optional[str] = None
+
+
+class BacktestRunHistoryResponse(BaseModel):
+    total: int
+    page: int
+    limit: int
+    items: List[BacktestRunHistoryItem] = Field(default_factory=list)
 
 
 class BacktestResultItem(BaseModel):

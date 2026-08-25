@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BarChart3, Check, SlidersHorizontal, X } from 'lucide-react';
+import { BarChart3, Check, SlidersHorizontal, Sparkles, X } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getParsedApiError, type ParsedApiError } from '../api/error';
 import { analysisApi, DuplicateTaskError } from '../api/analysis';
@@ -14,6 +14,9 @@ import { StockHistoryTrendDrawer } from '../components/history';
 import { ReportMarkdownDrawer } from '../components/report/ReportMarkdownDrawer';
 import { MarketReviewReportView } from '../components/report/MarketReviewReportView';
 import { MarketReviewRegionSelector } from '../components/market-review/MarketReviewRegionSelector';
+import { CompositeTaskCard } from '../components/composite-analysis/CompositeTaskCard';
+import { CompositeAnalysisReportView } from '../components/composite-analysis/CompositeAnalysisReportView';
+import { CompositeHistoryView } from '../components/composite-analysis/CompositeHistoryView';
 import { ReportSummary } from '../components/report/ReportSummary';
 import { RunFlowPanel } from '../components/run-flow';
 import { TaskPanel } from '../components/tasks';
@@ -61,6 +64,7 @@ type StockAnalysisNavigationState = {
 const DUPLICATE_BANNER_AUTO_DISMISS_MS = 5000;
 const BATCH_ANALYSIS_CHUNK_SIZE = 50;
 const TODAY_ANALYSIS_PAGE_SIZE = 100;
+const COMPOSITE_HISTORY_PAGE_SIZE = 20;
 const WATCHLIST_HISTORY_LOOKUP_CONCURRENCY = 4;
 const TASK_PANEL_COLLAPSED_STORAGE_KEY = 'dsa.home.taskPanelCollapsed';
 const SERVER_LOCAL_DATE_TIME_PATTERN = /^\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/;
@@ -250,6 +254,15 @@ const HomePage: React.FC = () => {
   const { language: uiLanguage, t } = useUiLanguage();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isSubmittingMarketReview, setIsSubmittingMarketReview] = useState(false);
+  const [isSubmittingComposite, setIsSubmittingComposite] = useState(false);
+  const [compositeNotice, setCompositeNotice] = useState<MarketReviewNotice>(null);
+  const [isCompositeHistoryOpen, setIsCompositeHistoryOpen] = useState(false);
+  const [compositeHistoryItems, setCompositeHistoryItems] = useState<HistoryItem[]>([]);
+  const [compositeHistoryTotal, setCompositeHistoryTotal] = useState(0);
+  const [compositeHistoryPage, setCompositeHistoryPage] = useState(1);
+  const [isLoadingCompositeHistory, setIsLoadingCompositeHistory] = useState(false);
+  const [isLoadingMoreCompositeHistory, setIsLoadingMoreCompositeHistory] = useState(false);
+  const [compositeHistoryError, setCompositeHistoryError] = useState<unknown>();
   const [marketReviewNotice, setMarketReviewNotice] = useState<MarketReviewNotice>(null);
   const [marketReviewError, setMarketReviewError] = useState<ParsedApiError | null>(null);
   const [marketReviewReport, setMarketReviewReport] = useState<string | null>(null);
@@ -476,7 +489,8 @@ const HomePage: React.FC = () => {
   const reportLanguage = normalizeReportLanguage(selectedReport?.meta.reportLanguage);
   const liveMarketReviewLanguage = normalizeReportLanguage(marketReviewPayload?.language);
   const isMarketReviewHistoryReport = selectedReport?.meta.reportType === 'market_review';
-  const isHistoryTrendUnavailable = !selectedReport || !selectedReport.meta.stockCode;
+  const isCompositeHistoryReport = selectedReport?.meta.reportType === 'composite_analysis';
+  const isHistoryTrendUnavailable = !selectedReport || !selectedReport.meta.stockCode || isCompositeHistoryReport;
 
   useEffect(() => {
     if (!isHistoryTrendUnavailable || !isHistoryTrendOpen) {
@@ -484,6 +498,48 @@ const HomePage: React.FC = () => {
     }
     closeHistoryTrend();
   }, [closeHistoryTrend, isHistoryTrendOpen, isHistoryTrendUnavailable]);
+
+  useEffect(() => {
+    if (!isCompositeHistoryReport) {
+      setIsCompositeHistoryOpen(false);
+    }
+  }, [isCompositeHistoryReport]);
+
+  const loadCompositeHistory = useCallback(async (page = 1) => {
+    const append = page > 1;
+    if (append) {
+      setIsLoadingMoreCompositeHistory(true);
+    } else {
+      setIsLoadingCompositeHistory(true);
+      setCompositeHistoryError(undefined);
+    }
+    try {
+      const response = await historyApi.getList({
+        stockCode: 'COMPOSITE',
+        reportType: 'composite_analysis',
+        page,
+        limit: COMPOSITE_HISTORY_PAGE_SIZE,
+      });
+      setCompositeHistoryItems((current) => append ? [...current, ...response.items] : response.items);
+      setCompositeHistoryTotal(response.total);
+      setCompositeHistoryPage(page);
+    } catch (loadError) {
+      setCompositeHistoryError(loadError);
+    } finally {
+      setIsLoadingCompositeHistory(false);
+      setIsLoadingMoreCompositeHistory(false);
+    }
+  }, []);
+
+  const openCompositeHistory = useCallback(() => {
+    setIsCompositeHistoryOpen(true);
+    void loadCompositeHistory(1);
+  }, [loadCompositeHistory]);
+
+  const selectCompositeHistoryRecord = useCallback(async (recordId: number) => {
+    await selectHistoryItem(recordId);
+    setIsCompositeHistoryOpen(false);
+  }, [selectHistoryItem]);
 
   const selectedStrategy = useMemo(
     () => analysisSkills.find((skill) => skill.id === selectedStrategyId),
@@ -1109,6 +1165,37 @@ const HomePage: React.FC = () => {
     return tasksByCode;
   }, [activeTasks]);
 
+  const activeCompositeTask = useMemo(
+    () => activeTasks.find((task) => task.taskType === 'composite_analysis'),
+    [activeTasks],
+  );
+
+  const handleTriggerCompositeAnalysis = useCallback(async () => {
+    if (watchlistState.watchlistCodes.length === 0) {
+      setCompositeNotice({ variant: 'warning', title: t('home.compositeAnalysis'), message: t('home.compositeEmpty') });
+      return;
+    }
+    setIsSubmittingComposite(true);
+    setCompositeNotice(null);
+    try {
+      const result = await analysisApi.triggerCompositeAnalysis({
+        stockCodes: watchlistState.watchlistCodes,
+        notify,
+        reportType: 'full',
+        reportLanguage: uiLanguage === 'en' ? 'en' : 'zh',
+        skills: selectedAnalysisSkills,
+        regions: marketReviewRegionOverride,
+      });
+      setCompositeNotice({ variant: 'success', title: t('home.compositeSubmitted'), message: result.message });
+      await refreshActiveTasks();
+    } catch (err: unknown) {
+      const parsed = getParsedApiError(err);
+      setCompositeNotice({ variant: 'danger', title: t('home.compositeConflict'), message: parsed.message });
+    } finally {
+      setIsSubmittingComposite(false);
+    }
+  }, [marketReviewRegionOverride, notify, refreshActiveTasks, selectedAnalysisSkills, t, uiLanguage, watchlistState.watchlistCodes]);
+
   const watchlistRows = useMemo<HomeWatchlistRow[]>(() => (
     watchlistState.watchlistCodes.map((code) => {
       const key = getStockCodeKey(code);
@@ -1350,6 +1437,14 @@ const HomePage: React.FC = () => {
     };
 
     return [marketReviewItem, ...stockItems].sort((left, right) => {
+      // 固定系统级记录在顶部；普通个股继续沿用原有的最近分析时间排序。
+      const rank = (item: StockBarItem) => item.reportType === 'composite_analysis'
+        ? 0
+        : item.reportType === 'market_review' || item.stockCode === 'MARKET'
+          ? 1
+          : 2;
+      const rankDiff = rank(left) - rank(right);
+      if (rankDiff !== 0) return rankDiff;
       const leftTime = left.lastAnalysisTime ? Date.parse(left.lastAnalysisTime) : 0;
       const rightTime = right.lastAnalysisTime ? Date.parse(right.lastAnalysisTime) : 0;
       return rightTime - leftTime;
@@ -1534,6 +1629,19 @@ const HomePage: React.FC = () => {
                 <BarChart3 className="h-4 w-4" aria-hidden="true" />
                 {t('home.marketReview')}
               </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="md"
+                isLoading={isSubmittingComposite}
+                loadingText={t('home.compositeSubmitting')}
+                onClick={() => void handleTriggerCompositeAnalysis()}
+                disabled={watchlistState.watchlistCodes.length === 0 || Boolean(activeCompositeTask)}
+                className="h-10 flex-1 whitespace-nowrap border-primary/35 text-primary md:flex-none"
+              >
+                <Sparkles className="h-4 w-4" aria-hidden="true" />
+                {t('home.compositeAnalysis')}
+              </Button>
               <button
                 type="button"
                 onClick={() => handleSubmitAnalysis()}
@@ -1634,6 +1742,24 @@ const HomePage: React.FC = () => {
             data-testid="home-dashboard-scroll"
             className="flex-1 min-w-0 min-h-0 overflow-x-auto overflow-y-auto px-3 pb-4 md:px-6 touch-pan-y"
           >
+            {compositeNotice ? (
+              <div className="mb-3">
+                <InlineAlert
+                  variant={compositeNotice.variant}
+                  title={compositeNotice.title}
+                  message={compositeNotice.message}
+                  className="rounded-xl px-3 py-2 text-xs shadow-none"
+                />
+              </div>
+            ) : null}
+
+            {activeCompositeTask ? (
+              <CompositeTaskCard
+                task={activeCompositeTask}
+                onViewReport={(historyId) => void selectHistoryItem(historyId)}
+              />
+            ) : null}
+
             {marketReviewNotice ? (
               <div className="mb-3">
                 <InlineAlert
@@ -1678,7 +1804,36 @@ const HomePage: React.FC = () => {
             ) : !marketReviewReport && selectedReport ? (
               <div className={isHistoryTrendOpen ? 'max-w-6xl space-y-4 pb-8' : 'max-w-4xl space-y-4 pb-8'}>
                 <div className="flex flex-wrap items-center justify-end gap-2">
-                  {!isMarketReviewHistoryReport ? (
+                  {isCompositeHistoryReport ? (
+                    <>
+                      <Button
+                        variant="home-action-ai"
+                        size="sm"
+                        disabled={isSubmittingComposite || Boolean(activeCompositeTask) || watchlistState.watchlistCodes.length === 0}
+                        isLoading={isSubmittingComposite}
+                        loadingText={t('home.compositeSubmitting')}
+                        onClick={() => void handleTriggerCompositeAnalysis()}
+                      >
+                        <Sparkles className="h-4 w-4" />
+                        {t('home.reanalyze')}
+                      </Button>
+                      <Button
+                        variant="home-action-ai"
+                        size="sm"
+                        className={isCompositeHistoryOpen ? 'border-primary/70 bg-primary/15 text-primary shadow-glow-cyan' : undefined}
+                        onClick={() => {
+                          if (isCompositeHistoryOpen) {
+                            setIsCompositeHistoryOpen(false);
+                            return;
+                          }
+                          openCompositeHistory();
+                        }}
+                      >
+                        <BarChart3 className="h-4 w-4" />
+                        {t('home.historyButton')}
+                      </Button>
+                    </>
+                  ) : !isMarketReviewHistoryReport ? (
                     <>
                       <Button
                         variant="home-action-ai"
@@ -1716,22 +1871,24 @@ const HomePage: React.FC = () => {
                       {t('home.rerunMarketReview')}
                     </Button>
                   )}
-                  <Button
-                    variant="home-action-ai"
-                    size="sm"
-                    disabled={selectedReport.meta.id === undefined || isHistoryTrendUnavailable}
-                    className={isHistoryTrendOpen ? 'border-primary/70 bg-primary/15 text-primary shadow-glow-cyan' : undefined}
-                    onClick={() => {
-                      if (isHistoryTrendOpen) {
-                        closeHistoryTrend();
-                        return;
-                      }
-                      void openHistoryTrend();
-                    }}
-                  >
-                    <BarChart3 className="h-4 w-4" />
-                    {t('home.historyTrend')}
-                  </Button>
+                  {!isCompositeHistoryReport ? (
+                    <Button
+                      variant="home-action-ai"
+                      size="sm"
+                      disabled={selectedReport.meta.id === undefined || isHistoryTrendUnavailable}
+                      className={isHistoryTrendOpen ? 'border-primary/70 bg-primary/15 text-primary shadow-glow-cyan' : undefined}
+                      onClick={() => {
+                        if (isHistoryTrendOpen) {
+                          closeHistoryTrend();
+                          return;
+                        }
+                        void openHistoryTrend();
+                      }}
+                    >
+                      <BarChart3 className="h-4 w-4" />
+                      {t('home.historyTrend')}
+                    </Button>
+                  ) : null}
                   <Button
                     variant="home-action-ai"
                     size="sm"
@@ -1744,7 +1901,23 @@ const HomePage: React.FC = () => {
                     {t('home.fullReport')}
                   </Button>
                 </div>
-                {isHistoryTrendOpen ? (
+                {isCompositeHistoryReport && isCompositeHistoryOpen ? (
+                  <CompositeHistoryView
+                    currentRecordId={selectedReport.meta.id}
+                    items={compositeHistoryItems}
+                    total={compositeHistoryTotal}
+                    hasMore={compositeHistoryItems.length < compositeHistoryTotal}
+                    isLoading={isLoadingCompositeHistory}
+                    isLoadingMore={isLoadingMoreCompositeHistory}
+                    error={compositeHistoryError}
+                    onClose={() => setIsCompositeHistoryOpen(false)}
+                    onLoadMore={() => void loadCompositeHistory(compositeHistoryPage + 1)}
+                    onRetry={() => void loadCompositeHistory(1)}
+                    onSelectRecord={(recordId) => void selectCompositeHistoryRecord(recordId)}
+                  />
+                ) : isCompositeHistoryReport ? (
+                  <CompositeAnalysisReportView report={selectedReport} />
+                ) : isHistoryTrendOpen ? (
                   <StockHistoryTrendDrawer
                     key={`stock-history-${selectedReport.meta.id}`}
                     report={selectedReport}

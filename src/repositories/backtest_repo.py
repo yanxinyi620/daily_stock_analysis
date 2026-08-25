@@ -16,11 +16,11 @@ from sqlalchemy import and_, delete, desc, func, or_, select
 from src.core.backtest_engine import OVERALL_SENTINEL_CODE
 from src.services.stock_code_utils import resolve_daily_stock_identity
 
-from src.storage import BacktestResult, BacktestSummary, DatabaseManager, AnalysisHistory
+from src.storage import BacktestResult, BacktestRun, BacktestSummary, DatabaseManager, AnalysisHistory
 
 logger = logging.getLogger(__name__)
 
-MARKET_REVIEW_REPORT_TYPE = "market_review"
+NON_STOCK_REPORT_TYPES = ("market_review", "composite_analysis")
 BacktestResultContextRow = Tuple[
     BacktestResult,
     Optional[str],
@@ -38,6 +38,51 @@ class BacktestRepository:
 
     def __init__(self, db_manager: Optional[DatabaseManager] = None):
         self.db = db_manager or DatabaseManager.get_instance()
+
+    def create_run(self, run: BacktestRun) -> None:
+        with self.db.get_session() as session:
+            session.add(run)
+            session.commit()
+
+    def mark_run_processing(self, run_id: str) -> None:
+        with self.db.get_session() as session:
+            run = session.execute(select(BacktestRun).where(BacktestRun.run_id == run_id)).scalar_one()
+            run.status = "processing"
+            run.started_at = datetime.now()
+            session.commit()
+
+    def complete_run(self, run_id: str, *, status: str, stats: dict) -> None:
+        with self.db.get_session() as session:
+            run = session.execute(select(BacktestRun).where(BacktestRun.run_id == run_id)).scalar_one()
+            run.status = status
+            run.completed_at = datetime.now()
+            run.processed_count = int(stats.get("processed", 0))
+            run.saved_count = int(stats.get("saved", 0))
+            run.completed_count = int(stats.get("completed", 0))
+            run.insufficient_count = int(stats.get("insufficient", 0))
+            run.errors_count = int(stats.get("errors", 0))
+            run.message = stats.get("message")
+            run.diagnostics_json = json.dumps(stats.get("diagnostics") or {}, ensure_ascii=False)
+            session.commit()
+
+    def fail_run(self, run_id: str, *, error: str) -> None:
+        with self.db.get_session() as session:
+            run = session.execute(select(BacktestRun).where(BacktestRun.run_id == run_id)).scalar_one()
+            run.status = "failed"
+            run.completed_at = datetime.now()
+            run.error = str(error)[:500]
+            session.commit()
+
+    def list_runs(self, *, offset: int, limit: int) -> Tuple[List[BacktestRun], int]:
+        with self.db.get_session() as session:
+            total = session.execute(select(func.count(BacktestRun.id))).scalar() or 0
+            rows = session.execute(
+                select(BacktestRun)
+                .order_by(desc(BacktestRun.created_at), desc(BacktestRun.id))
+                .offset(offset)
+                .limit(limit)
+            ).scalars().all()
+            return list(rows), int(total)
 
     def get_candidates(
         self,
@@ -60,7 +105,7 @@ class BacktestRepository:
             conditions.append(
                 or_(
                     AnalysisHistory.report_type.is_(None),
-                    AnalysisHistory.report_type != MARKET_REVIEW_REPORT_TYPE,
+                    AnalysisHistory.report_type.not_in(NON_STOCK_REPORT_TYPES),
                 )
             )
 
@@ -106,7 +151,7 @@ class BacktestRepository:
                 BacktestResult.engine_version == engine_version,
                 or_(
                     AnalysisHistory.report_type.is_(None),
-                    AnalysisHistory.report_type != MARKET_REVIEW_REPORT_TYPE,
+                    AnalysisHistory.report_type.not_in(NON_STOCK_REPORT_TYPES),
                 ),
             ]
             if code:
@@ -488,7 +533,13 @@ class BacktestRepository:
         analysis_date_to: Optional[date],
         days: Optional[int],
     ) -> List[object]:
-        conditions = []
+        stock_history_ids = select(AnalysisHistory.id).where(
+            or_(
+                AnalysisHistory.report_type.is_(None),
+                AnalysisHistory.report_type.not_in(NON_STOCK_REPORT_TYPES),
+            )
+        )
+        conditions = [BacktestResult.analysis_history_id.in_(stock_history_ids)]
         if code:
             conditions.extend(BacktestRepository._build_code_conditions(BacktestResult.code, code))
         if eval_window_days is not None:

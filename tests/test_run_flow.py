@@ -502,6 +502,120 @@ class RunFlowTestCase(unittest.TestCase):
         self.assertIn("provider_run_started", {event.type for event in snapshot.events})
         self.assertIn("llm_run_started", {event.type for event in snapshot.events})
 
+    def test_active_backend_fallback_chain_uses_final_success_model_in_summary(self) -> None:
+        flow_events: list[dict] = []
+        token = activate_run_diagnostic_context(
+            trace_id="trace-fallback",
+            task_id="task-fallback",
+            query_id="query-fallback",
+            stock_code="600410",
+            trigger_source="api",
+            event_sink=flow_events.append,
+        )
+        try:
+            record_llm_run_started(
+                provider="codex_cli",
+                model="codex_cli",
+                call_type="analysis",
+            )
+            record_llm_run(
+                success=False,
+                provider="codex_cli",
+                model="codex_cli",
+                call_type="analysis",
+                error_type="invalid_json",
+                error_message="ambiguous_json",
+            )
+            record_llm_run(
+                success=False,
+                provider="deepseek",
+                model="deepseek/deepseek-v4-flash",
+                call_type="analysis",
+                fallback_model="deepseek/deepseek-v4-pro",
+                error_type="empty_output",
+                error_message="empty response",
+            )
+            record_llm_run(
+                success=True,
+                provider="deepseek",
+                model="deepseek/deepseek-v4-pro",
+                call_type="analysis",
+                duration_ms=1200,
+            )
+        finally:
+            reset_run_diagnostic_context(token)
+
+        snapshot = build_task_run_flow_snapshot(
+            TaskInfo(
+                task_id="task-fallback",
+                trace_id="trace-fallback",
+                stock_code="600410",
+                stock_name="华胜天成",
+                status=TaskStatus.COMPLETED,
+                created_at=datetime(2026, 8, 18, 10, 28, 0),
+                completed_at=datetime(2026, 8, 18, 10, 34, 0),
+                flow_events=flow_events,
+            )
+        )
+
+        model_nodes = [node for node in snapshot.nodes if node.kind == "model"]
+        self.assertEqual([node.provider for node in model_nodes], [
+            "codex_cli",
+            "deepseek/deepseek-v4-flash",
+            "deepseek/deepseek-v4-pro",
+        ])
+        self.assertEqual(snapshot.summary.failed_attempts, 2)
+        self.assertEqual(snapshot.summary.fallback_count, 2)
+        self.assertEqual(snapshot.summary.model, "deepseek/deepseek-v4-pro")
+
+    def test_history_backend_fallback_chain_is_degraded_not_failed(self) -> None:
+        diagnostics = _diagnostics()
+        diagnostics["llm_runs"] = [
+            {
+                "trace_id": "trace-flow",
+                "provider": "codex_cli",
+                "model": "codex_cli",
+                "call_type": "analysis",
+                "success": False,
+                "error_type": "invalid_json",
+                "error_message_sanitized": "ambiguous_json",
+                "created_at": "2026-08-18T10:28:26",
+            },
+            {
+                "trace_id": "trace-flow",
+                "provider": "deepseek",
+                "model": "deepseek/deepseek-v4-flash",
+                "call_type": "analysis",
+                "success": False,
+                "fallback_model": "deepseek/deepseek-v4-pro",
+                "error_type": "empty_output",
+                "error_message_sanitized": "empty response",
+                "created_at": "2026-08-18T10:30:11",
+            },
+            {
+                "trace_id": "trace-flow",
+                "provider": "deepseek",
+                "model": "deepseek/deepseek-v4-pro",
+                "call_type": "analysis",
+                "success": True,
+                "duration_ms": 1200,
+                "created_at": "2026-08-18T10:34:07",
+            },
+        ]
+        record = _history_record(
+            context_snapshot={"diagnostics": diagnostics},
+            raw_result={"model_used": "deepseek/deepseek-v4-pro", "success": True},
+            code="600410",
+            name="华胜天成",
+        )
+
+        snapshot = build_history_run_flow_snapshot(record)
+
+        self.assertEqual(snapshot.status, "degraded")
+        self.assertEqual(snapshot.summary.failed_attempts, 2)
+        self.assertEqual(snapshot.summary.fallback_count, 2)
+        self.assertEqual(snapshot.summary.model, "deepseek/deepseek-v4-pro")
+
     def test_active_chip_started_event_updates_same_provider_node(self) -> None:
         flow_events: list[dict] = []
         token = activate_run_diagnostic_context(

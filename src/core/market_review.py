@@ -11,6 +11,7 @@
 """
 
 import logging
+import re
 import inspect
 import re
 from dataclasses import dataclass, field
@@ -38,6 +39,24 @@ from src.utils.market_review_region import (
 
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_market_review_signal_score(*texts: Any) -> int:
+    """Extract the persisted 0-100 market signal from rendered review text."""
+    pattern = re.compile(
+        r"(?:盘面信号|市场信号|market\s+signal|market\s+sentiment)"
+        r"[*_]*\s*[:：]?\s*(\d{1,3})\s*/\s*100",
+        re.IGNORECASE,
+    )
+    for value in texts:
+        if not isinstance(value, str):
+            continue
+        match = pattern.search(value)
+        if match:
+            score = int(match.group(1))
+            if 0 <= score <= 100:
+                return score
+    return 50
 
 MARKET_REVIEW_HISTORY_CODE = "MARKET"
 MARKET_REVIEW_REPORT_TYPE = "market_review"
@@ -340,6 +359,11 @@ def run_market_review(
                     query_id=history_query_id,
                     market_light_snapshots=market_light_snapshots,
                     market_review_payload=market_review_payload,
+                    model_used=getattr(
+                        getattr(analyzer, "analyzer", analyzer),
+                        "last_model_used",
+                        None,
+                    ),
                 )
             
             # 推送通知（合并模式下跳过，由 main 层统一发送）
@@ -787,6 +811,7 @@ def _persist_market_review_history(
     query_id: Optional[str] = None,
     market_light_snapshots: Optional[Dict[str, Dict[str, Any]]] = None,
     market_review_payload: Optional[Dict[str, Any]] = None,
+    model_used: Optional[str] = None,
 ) -> int:
     """Persist market review output into the existing analysis history table."""
     try:
@@ -807,10 +832,11 @@ def _persist_market_review_history(
             operation_advice = "查看复盘"
             trend_prediction = "大盘复盘"
 
+        signal_score = _extract_market_review_signal_score(review_report, markdown_report)
         result = AnalysisResult(
             code=MARKET_REVIEW_HISTORY_CODE,
             name=stock_name,
-            sentiment_score=50,
+            sentiment_score=signal_score,
             trend_prediction=trend_prediction,
             operation_advice=operation_advice,
             analysis_summary=summary,
@@ -818,6 +844,7 @@ def _persist_market_review_history(
             news_summary=review_report,
             raw_response=markdown_report,
             data_sources="market_review",
+            model_used=model_used,
         )
 
         history_query_id = query_id or f"market_review_{uuid.uuid4().hex}"

@@ -30,6 +30,54 @@ export interface BacktestRunResponse {
   diagnostics?: Record<string, unknown>;
 }
 
+export interface BacktestTaskAccepted {
+  taskId: string;
+  status: string;
+  message?: string | null;
+  reused: boolean;
+}
+
+export interface BacktestTaskStatus {
+  taskId: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  progress: number;
+  message?: string | null;
+  error?: string | null;
+  result?: BacktestRunResponse | null;
+}
+
+export interface BacktestRunHistoryItem {
+  runId: string;
+  taskId?: string | null;
+  source: string;
+  status: string;
+  code?: string | null;
+  force: boolean;
+  evalWindowDays?: number | null;
+  minAgeDays?: number | null;
+  analysisDateFrom?: string | null;
+  analysisDateTo?: string | null;
+  limit: number;
+  createdAt: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  processed?: number | null;
+  saved?: number | null;
+  completed?: number | null;
+  insufficient?: number | null;
+  errors?: number | null;
+  message?: string | null;
+  diagnostics: Record<string, unknown>;
+  error?: string | null;
+}
+
+export interface BacktestRunHistoryResponse {
+  total: number;
+  page: number;
+  limit: number;
+  items: BacktestRunHistoryItem[];
+}
+
 // ============ Result Item ============
 
 export interface BacktestResultItem {

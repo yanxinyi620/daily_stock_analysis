@@ -10,6 +10,8 @@ import type {
   MarketReviewRequest,
   TaskStatus,
   TaskListResponse,
+  CompositeAnalysisRequest,
+  CompositeTaskAccepted,
 } from '../types/analysis';
 import type { RunFlowSnapshot } from '../types/runFlow';
 import { serializeMarketReviewRegions } from '../utils/marketReviewRegion';
@@ -124,6 +126,31 @@ export const analysisApi = {
     return toCamelCase<MarketReviewAccepted>(response.data);
   },
 
+  triggerCompositeAnalysis: async (data: CompositeAnalysisRequest): Promise<CompositeTaskAccepted> => {
+    const response = await apiClient.post<Record<string, unknown>>(
+      '/api/v1/analysis/composite',
+      {
+        stock_codes: data.stockCodes,
+        notify: data.notify,
+        report_type: data.reportType ?? 'full',
+        report_language: data.reportLanguage,
+        skills: data.skills,
+        ...(data.regions !== undefined && { region: serializeMarketReviewRegions(data.regions) }),
+      },
+      { validateStatus: (status) => status === 202 || status === 409 },
+    );
+    if (response.status === 409) {
+      const conflict = toCamelCase<{
+        message: string;
+        stockConflicts: Record<string, string>;
+        marketReviewConflict: boolean;
+        compositeTaskId?: string;
+      }>(response.data);
+      throw new CompositeTaskConflictError(conflict.message, conflict);
+    }
+    return toCamelCase<CompositeTaskAccepted>(response.data);
+  },
+
   /**
    * Get async task status.
    * @param taskId Task ID
@@ -200,5 +227,22 @@ export class DuplicateTaskError extends Error {
     this.name = 'DuplicateTaskError';
     this.stockCode = stockCode;
     this.existingTaskId = existingTaskId;
+  }
+}
+
+export class CompositeTaskConflictError extends Error {
+  stockConflicts: Record<string, string>;
+  marketReviewConflict: boolean;
+  compositeTaskId?: string;
+
+  constructor(
+    message: string,
+    conflict: { stockConflicts?: Record<string, string>; marketReviewConflict?: boolean; compositeTaskId?: string },
+  ) {
+    super(message || '综合分析与正在运行的任务冲突');
+    this.name = 'CompositeTaskConflictError';
+    this.stockConflicts = conflict.stockConflicts ?? {};
+    this.marketReviewConflict = conflict.marketReviewConflict ?? false;
+    this.compositeTaskId = conflict.compositeTaskId;
   }
 }

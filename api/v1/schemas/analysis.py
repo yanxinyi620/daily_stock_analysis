@@ -24,11 +24,40 @@ class TaskStatusEnum(str, Enum):
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
+    PARTIAL = "partial"
     CANCEL_REQUESTED = "cancel_requested"
     CANCELLED = "cancelled"
 
 
 AnalysisPhase = Literal["auto", "premarket", "intraday", "postmarket"]
+
+
+class CompositeAnalysisRequest(BaseModel):
+    """Frozen parameters for one watchlist + market composite run."""
+
+    stock_codes: List[str] = Field(..., min_length=1, max_length=50)
+    notify: bool = True
+    report_type: str = Field("full", pattern="^(simple|detailed|full|brief)$")
+    report_language: Optional[Literal["zh", "en", "ko"]] = None
+    skills: Optional[List[str]] = None
+    region: Optional[str] = Field(None, min_length=1, max_length=64)
+
+    @field_validator("region")
+    @classmethod
+    def normalize_composite_region(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        return normalize_market_review_region_strict(value)
+
+
+class CompositeTaskAccepted(BaseModel):
+    task_id: str
+    trace_id: Optional[str] = None
+    status: str = "pending"
+    message: str
+    stock_codes: List[str]
+    notify: bool
+    region: str
 
 
 class AnalyzeRequest(BaseModel):
@@ -336,6 +365,9 @@ class TaskStatus(BaseModel):
         description="请求的分析阶段；无持久化字段的历史 DB fallback 可能为空",
     )
     skills: Optional[List[str]] = Field(None, description="本次任务使用的策略 skill ID 列表")
+    task_type: Optional[str] = None
+    parent_task_id: Optional[str] = None
+    composite: Optional[Any] = None
     
     model_config = ConfigDict(json_schema_extra={
         "example": {
@@ -385,6 +417,9 @@ class TaskInfo(BaseModel):
         None,
         description="大盘复盘任务实际执行的 canonical 市场范围",
     )
+    task_type: str = Field("stock_analysis", description="任务类型")
+    parent_task_id: Optional[str] = None
+    composite: Optional[Any] = None
     
     model_config = ConfigDict(json_schema_extra={
         "example": {
