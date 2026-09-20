@@ -45,3 +45,17 @@
 中文专题暂无英文对应页，本次未扩展 README。报告来源页面不变，本轮无新 UI 截图要求。
 
 验收等待期间，整个每日工作流已设为 `disabled_manually`，避免 `CLOUD_DAILY_ENABLED=false` 时仍执行旧默认股票任务。确认验收股票后先恢复工作流，手动验收通过再启用云端定时模式。
+
+## 2026-09-20 真实日报验收与启用
+
+用户授权添加 `000001` 后，已将平安银行加入正式 A 账号的自选股，保留该条目和所有验收报告。
+
+- 首次 GitHub 实际分析运行：`35499195787`，当时查询到 completed/success；正式任务 `42a3bbeb-61a1-4c94-a792-afa6eebe91d4` 于 `08:19:47 UTC` 创建、`08:29:17 UTC` 完成，约 9 分 30 秒。
+- [正式日报](https://stock.xinyilab.top/reports/05dba9ec-6cd3-52a5-b379-4535aac6fc7c)：1 支股票完成、0 支失败，大盘完成；业务摘要 outcome=completed，报告 4788 字符，无模板降级提示。
+- 独立数据库连接确认个股、大盘和综合历史均已持久化。真实 A/B 登录验证确认 A 可读取任务、报告、私有附件；B 不可读取同一数据。正式浏览器验证报告深链、刷新和 Markdown 下载通过。
+- 使用真实正式 Supabase 重复调用同日入口，在故意不提供引擎数据库/模型配置的情况下直接返回成功；任务、完成时间、报告及子项/综合历史数量保持不变，验证未重新运行分析引擎。
+- 另发起了 GitHub 自身的重跑验证，但平台状态尚未确认：查询持续返回 queued/run_attempt=1 且无 jobs，取消请求却返回“Cannot cancel a workflow run that is completed”。**不声称该额外 GitHub 重跑通过或已取消**，也不使用它替代上述真实入口去重证据。
+- 已核对仓库变量 `CLOUD_DAILY_ENABLED=true`，每日工作流 state=active；沿用周一至周五北京时间 18:00 的计划触发，cn 交易日历过滤节假日。网页 Actions 投递仍关闭，日报归属 A。
+- 本次是周日强制验收，行情沿用可获得的数据，不代表周日存在实时交易。尚未观察下一次自然定时触发；多股、跨市场、真实部分失败和中断恢复仍不属于本次远端通过结论。
+
+证据（仓库外）：`/tmp/dsa-daily-verification.json`、`/tmp/dsa-daily-before-retry.json`、`/tmp/dsa-daily-browser.log`、`/tmp/dsa-daily-live-report.png`。本轮为平台配置/数据验收及文档更新，无新代码修改；未重复运行代码回归测试。

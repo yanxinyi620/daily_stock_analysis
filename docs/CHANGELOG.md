@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [文档] 记录主账号 000001 真实 Actions 日报、权限及重复入口验收，启用交易日云端定时分析并注明额外重跑状态与自然定时观测缺口。
+
 - [新功能] 每日 Actions 增加单用户云端综合分析模式，读取云端自选股并复用严格分析与私有报告发布；云端模式禁止公开日志和报告附件，定时切换默认关闭。
 
 - [文档] 记录本地 Runner 新版正式发布、生产数据库增量迁移与已有账号验收；明确正式 Runner 尚未启动及回滚方式。
