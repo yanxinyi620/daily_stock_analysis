@@ -95,3 +95,20 @@
 本轮远端仅验证一只 A 股自选股加 A 股复盘的完整成功路径。多股票、跨市场、真实部分失败、真实断网/强杀在本轮未重复运行；部分完成、失败摘要、原子性、取消和恢复包错误由本地确定性测试覆盖，不以真实单样本代替这些场景。非交易日数据和模型结论准确性不属于部署通过的证明。
 
 选股、回测、问股、Actions 日报、旧 SQLite 导入、生产切换仍待后续。测试样本和新增报告保留；测试 Runner 停止后可回退前端停用功能，不删除历史或逆向缩短数据库字段。没有新增配置变量、付费资源或域名变更，未提交/推送代码。专题无对应英文文档；README 未扩写。
+
+## 2026-09-20 正式站点发布
+
+用户授权提交代码并更新正式地址后，代码提交为 `1cbfeb6c`（`feat: add Supabase reports and local runner cloud analysis`），通过 Vercel CLI 从同一工作区部署生产版本，无 Git push 或自动发布 tag。
+
+- 正式地址：<https://stock.xinyilab.top>；生产部署 `dpl_7BiSfxabpqYC7SXARVExz9awz9iP`，状态 READY。
+- Production 继续使用原 Supabase 项目 `uwqvohwgaxedxzvfjqkm`，已有账号不变；Preview 继续使用恢复项目。
+- 正式项目补齐 `202609180001`、`202609180002`、`202609200001`、`202609200002` 四个迁移，同一事务执行；已有基础迁移未重复运行。原 public 业务记录、Auth 用户/身份、Storage 桶/对象记录的迁移前后摘要一致。
+- 迁移前 public schema/data 备份保存在本机受限目录 `~/backups/dsa-cloud/pre-runner-20260920T014717Z/`，附迁移摘要；不入库。未删除历史记录、修改 DNS 或 CruxSet 服务。
+- 本次发布前重新验证：81 项后端相关测试、58 项云端测试通过；Web lint 无错误（既有 MobileChatPage Hook 警告 1 条），云端构建通过。此前完整回归结果仍见上文，不冒充本次重新执行。
+- 正式环境 API 验证：A/B 原账号登录通过；A 可读取自己的报告与附件，B 无法读取 A 的记录或附件；B 无执行权限，匿名请求被拒绝。三个任务类型均在 Runner 离线时返回 409，未插入执行记录。
+- 正式环境浏览器验证：登录、三个任务选项、离线按钮禁用、报告深链、刷新及 Markdown 下载通过。证据保存在仓库外 `/tmp/dsa-production-browser.log`、`/tmp/dsa-production-verify.log` 与 `/tmp/dsa-cloud-evidence/production-*.png`。
+- 私有 `dsa_engine` schema 对 anon/authenticated 均不可访问，历史类型字段宽度已确认为 32。
+- 限制：本次未在正式项目执行真实模型分析，完整分析闭环证据来自前述恢复项目；正式 Runner 当前未启动。用户需启动连接正式项目的 Runner 后才能执行新分析，网页不会替代本地执行进程。
+- 回滚：停止 Runner 并将 Vercel 恢复为此前报告阅读部署 `dpl_DzYoPJoeguFrupDVqoz9RgJFEesD`；保留新增表、迁移和所有历史数据。已执行迁移保持原始内容与摘要，不为格式调整重写迁移文件。
+
+本文为中文部署专题，无对应英文版本；未扩展 README。
