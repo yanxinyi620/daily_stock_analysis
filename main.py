@@ -440,6 +440,7 @@ def parse_arguments() -> argparse.Namespace:
         help='强制回测（即使已有回测结果也重新计算）'
     )
 
+    parser.add_argument('--runner', action='store_true', help='只启动主动连接云端的分析 Runner，不启动本地 Web 或定时调度')
     return parser.parse_args()
 
 
@@ -1439,6 +1440,11 @@ def main() -> int:
     logger.info("A股自选股智能分析系统 启动")
     logger.info(f"运行时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info("=" * 60)
+
+    # Explicit runner mode must return before Web/scheduler/CLI execution selection.
+    if getattr(args, "runner", False):
+        from src.services.cloud_runner import run_cloud_runner
+        return run_cloud_runner(config)
 
     # 验证配置
     warnings = config.validate()

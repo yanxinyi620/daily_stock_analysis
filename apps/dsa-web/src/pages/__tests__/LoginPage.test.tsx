@@ -48,7 +48,21 @@ describe('LoginPage', () => {
     expect(screen.getByLabelText('确认密码')).toHaveAttribute('data-appearance', 'login');
   });
 
-  it('navigates to redirect after a successful login', async () => {
+  it.each([
+    ['missing redirect', '', '/'],
+    ['empty redirect', 'redirect=', '/'],
+    ['absolute URL', 'redirect=https%3A%2F%2Fexample.invalid', '/'],
+    ['protocol-relative URL', 'redirect=%2F%2Fexample.invalid', '/'],
+    ['backslash URL', 'redirect=%2F%5Cexample.invalid', '/'],
+    ['line feed URL', 'redirect=%2F%0A%2Fexample.invalid', '/'],
+    ['carriage return URL', 'redirect=%2F%0D%2Fexample.invalid', '/'],
+    ['tab URL', 'redirect=%2F%09%2Fexample.invalid', '/'],
+    ['control character', 'redirect=%2Fsettings%00', '/'],
+    ['delete character', 'redirect=%2Fsettings%7F', '/'],
+    ['internal path', 'redirect=%2Fsettings', '/settings'],
+    ['query and fragment', 'redirect=%2Fsettings%3Ftab%3Dgeneral%23security', '/settings?tab=general#security'],
+  ])('handles %s after a successful login', async (_name, query, expectedRedirect) => {
+    useSearchParamsMock.mockReturnValue([new URLSearchParams(query)]);
     useAuthMock.mockReturnValue({
       login: vi.fn().mockResolvedValue({ success: true }),
       passwordSet: true,
@@ -60,7 +74,7 @@ describe('LoginPage', () => {
     fireEvent.change(screen.getByLabelText('登录密码'), { target: { value: 'passwd6' } });
     fireEvent.click(screen.getByRole('button', { name: '授权进入工作台' }));
 
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/settings', { replace: true }));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith(expectedRedirect, { replace: true }));
     expect(screen.getByLabelText('登录密码')).toHaveAttribute('data-appearance', 'login');
   });
 

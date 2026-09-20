@@ -49,6 +49,8 @@ from sqlalchemy import (
     Table,
 )
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import (
     declarative_base,
     sessionmaker,
@@ -342,7 +344,7 @@ class AnalysisHistory(Base):
     # 股票信息
     code = Column(String(10), nullable=False, index=True)
     name = Column(String(50))
-    report_type = Column(String(16), index=True)
+    report_type = Column(String(32), index=True)
 
     # 核心结论
     sentiment_score = Column(Integer)
@@ -1353,14 +1355,21 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             cls._instance._initialized = False
         return cls._instance
     
-    def __init__(self, db_url: Optional[str] = None):
+    def __init__(self, db_url: Optional[str] = None, *, cloud_schema: Optional[str] = None):
         """
         初始化数据库管理器
         
         Args:
             db_url: 数据库连接 URL（可选，默认从配置读取）
+            cloud_schema: Private cloud schema. Only ``dsa_engine`` is accepted.
         """
         if getattr(self, '_initialized', False):
+            if cloud_schema is not None and not getattr(self, "_cloud_schema", None):
+                raise RuntimeError("Cloud engine storage cannot reuse an existing local database instance.")
+            if cloud_schema is not None and cloud_schema != getattr(self, "_cloud_schema", None):
+                raise RuntimeError("Cloud engine storage schema does not match the initialized database instance.")
+            if cloud_schema is not None and db_url is not None and db_url != getattr(self, "_db_url", None):
+                raise RuntimeError("Cloud engine storage URL does not match the initialized database instance.")
             return
 
         created_engine = None
@@ -1370,6 +1379,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             if db_url is None:
                 db_url = config.get_db_url()
 
+            self._cloud_schema = self._validate_cloud_schema(db_url, cloud_schema)
             self._db_url = db_url
             self._sqlite_wal_enabled = config.sqlite_wal_enabled
             self._sqlite_busy_timeout_ms = config.sqlite_busy_timeout_ms
@@ -1380,6 +1390,15 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 "echo": False,
                 "pool_pre_ping": True,
             }
+            if self._cloud_schema:
+                # The runner is intentionally small; do not allow unbounded web-worker
+                # connection growth against the private engine database.
+                engine_kwargs.update({
+                    "pool_size": 2,
+                    "max_overflow": 0,
+                    "pool_timeout": 30,
+                    "connect_args": {"connect_timeout": 10},
+                })
             if str(db_url).startswith("sqlite:") and self._sqlite_busy_timeout_ms > 0:
                 engine_kwargs["connect_args"] = {
                     "timeout": self._sqlite_busy_timeout_ms / 1000,
@@ -1394,6 +1413,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             self._is_sqlite_engine = self._engine.url.get_backend_name() == 'sqlite'
             self._sqlite_file_db = self._is_sqlite_engine and self._is_file_sqlite_database()
             self._install_sqlite_pragma_handler()
+            self._install_cloud_schema_handler()
 
             # 创建 Session 工厂
             self._SessionLocal = sessionmaker(
@@ -1402,16 +1422,19 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 autoflush=False,
             )
 
-            # 创建所有表
-            Base.metadata.create_all(self._engine)
-            self._ensure_llm_usage_telemetry_columns()
-            self._ensure_decision_signal_profile_schema()
-            self._ensure_intelligence_item_scope_values()
-            self._ensure_schema_migration_record()
-            self._ensure_intelligence_items_unique_index()
+            if self._cloud_schema:
+                self._verify_cloud_schema()
+            else:
+                # 创建所有表
+                Base.metadata.create_all(self._engine)
+                self._ensure_llm_usage_telemetry_columns()
+                self._ensure_decision_signal_profile_schema()
+                self._ensure_intelligence_item_scope_values()
+                self._ensure_schema_migration_record()
+                self._ensure_intelligence_items_unique_index()
 
             self._initialized = True
-            logger.info(f"数据库初始化完成: {db_url}")
+            logger.info("数据库初始化完成: dialect=%s cloud_schema=%s", self._engine.dialect.name, self._cloud_schema or "local")
 
             # 注册退出钩子，确保程序退出时关闭数据库连接
             atexit.register(DatabaseManager._cleanup_engine, self._engine)
@@ -1426,6 +1449,66 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             self._SessionLocal = None
             self.__class__._instance = None
             raise
+
+    @staticmethod
+    def _validate_cloud_schema(db_url: Optional[str], cloud_schema: Optional[str]) -> Optional[str]:
+        if cloud_schema is None:
+            return None
+        if cloud_schema != "dsa_engine":
+            raise ValueError("Only the fixed private cloud schema 'dsa_engine' is supported.")
+        if not db_url:
+            raise ValueError("Cloud engine storage requires an explicit PostgreSQL database URL.")
+        try:
+            url = make_url(db_url)
+        except Exception as exc:
+            raise ValueError("Cloud engine storage requires a valid PostgreSQL database URL.") from None
+        if url.get_backend_name() != "postgresql" or url.drivername != "postgresql+psycopg":
+            raise ValueError("Cloud engine storage requires a postgresql+psycopg URL.")
+        sslmode = str(url.query.get("sslmode", "")).lower()
+        if sslmode != "verify-full":
+            raise ValueError("Cloud engine storage requires sslmode=verify-full.")
+        return cloud_schema
+
+    def _install_cloud_schema_handler(self) -> None:
+        if not self._cloud_schema:
+            return
+
+        @event.listens_for(self._engine, "connect")
+        def _select_private_schema(dbapi_connection, _connection_record) -> None:
+            # Run SET SESSION outside a transaction. A regular SET is rolled back
+            # with a failed transaction, which could otherwise return a connection
+            # to the pool with the public schema selected.
+            previous_autocommit = getattr(dbapi_connection, "autocommit", None)
+            cursor = dbapi_connection.cursor()
+            try:
+                if previous_autocommit is not None:
+                    dbapi_connection.autocommit = True
+                cursor.execute("SET SESSION search_path TO dsa_engine")
+            finally:
+                cursor.close()
+                if previous_autocommit is not None:
+                    dbapi_connection.autocommit = previous_autocommit
+
+    def _verify_cloud_schema(self) -> None:
+        inspector = inspect(self._engine)
+        if not inspector.has_schema(self._cloud_schema):
+            raise RuntimeError("Private cloud engine schema is missing.")
+        with self._engine.connect() as connection:
+            if connection.execute(text("SELECT current_schema()")).scalar_one() != self._cloud_schema:
+                raise RuntimeError("Private cloud engine schema was not selected for the connection.")
+        available_tables = set(inspector.get_table_names(schema=self._cloud_schema))
+        missing_tables = sorted(set(Base.metadata.tables) - available_tables)
+        if missing_tables:
+            raise RuntimeError("Private cloud engine schema is incomplete: " + ", ".join(missing_tables))
+        missing_columns = []
+        for table_name, table in Base.metadata.tables.items():
+            actual_columns = {column["name"] for column in inspector.get_columns(table_name, schema=self._cloud_schema)}
+            expected_columns = {column.name for column in table.columns}
+            missing = sorted(expected_columns - actual_columns)
+            if missing:
+                missing_columns.append(f"{table_name}({', '.join(missing)})")
+        if missing_columns:
+            raise RuntimeError("Private cloud engine schema columns are incomplete: " + "; ".join(missing_columns))
 
     def _ensure_schema_migration_record(self) -> None:
         session = self._SessionLocal()
@@ -3327,7 +3410,8 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                     "created_at": now,
                     "updated_at": now,
                 }
-                stmt = sqlite_insert(ConversationSessionState).values(**values)
+                insert_factory = sqlite_insert if self._is_sqlite_engine else postgresql_insert
+                stmt = insert_factory(ConversationSessionState).values(**values)
                 session.execute(
                     stmt.on_conflict_do_update(
                         index_elements=["session_id"],
@@ -3565,7 +3649,8 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 "estimated_tokens": int(estimated_tokens or 0),
                 "updated_at": now,
             }
-            stmt = sqlite_insert(ConversationSummary).values(**values)
+            insert_factory = sqlite_insert if self._is_sqlite_engine else postgresql_insert
+            stmt = insert_factory(ConversationSummary).values(**values)
             session.execute(
                 stmt.on_conflict_do_update(
                     index_elements=["session_id"],

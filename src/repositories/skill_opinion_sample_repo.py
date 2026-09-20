@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, List, Optional
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from src.storage import AnalysisHistory, DatabaseManager, SkillOpinionSampleRecord
@@ -43,7 +44,8 @@ class SkillOpinionSampleRepository:
             if not eligible_values:
                 return 0
 
-            statement = sqlite_insert(SkillOpinionSampleRecord).values(eligible_values)
+            insert_factory = sqlite_insert if self.db._is_sqlite_engine else postgresql_insert
+            statement = insert_factory(SkillOpinionSampleRecord).values(eligible_values)
             statement = statement.on_conflict_do_nothing(
                 index_elements=[
                     "analysis_history_id",

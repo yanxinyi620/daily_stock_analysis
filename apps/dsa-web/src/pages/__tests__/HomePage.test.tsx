@@ -482,7 +482,7 @@ describe('HomePage', () => {
     expect(screen.getByText('贵州茅台 历史运行流')).toBeInTheDocument();
   });
 
-  it('shows market review history in the stock bar', async () => {
+  it('pins market review history above newer stocks in the stock bar', async () => {
     vi.mocked(historyApi.getStockBarList).mockResolvedValue({
       total: 1,
       items: [{
@@ -523,7 +523,7 @@ describe('HomePage', () => {
     expect(await screen.findByRole('button', { name: /MARKET/ })).toBeInTheDocument();
     const newerStockButton = await screen.findByRole('button', { name: /AAPL/ });
     const marketButton = await screen.findByRole('button', { name: /MARKET/ });
-    expect(newerStockButton.compareDocumentPosition(marketButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(marketButton.compareDocumentPosition(newerStockButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByText('大盘复盘历史')).not.toBeInTheDocument();
     expect(historyApi.getList).toHaveBeenCalledWith({
       stockCode: 'MARKET',

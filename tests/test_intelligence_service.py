@@ -214,18 +214,17 @@ class IntelligenceServiceTestCase(unittest.TestCase):
         self.service.create_source({"name": "good-feed", "url": "https://feeds.example.com/rss.xml", "scope_type": "market"})
         bad = self.service.create_source({"name": "bad-feed", "url": "https://bad.example.com/rss.xml", "scope_type": "market"})
 
-        def fake_get(url, **kwargs):
-            self.assertNotIn("trust_env", kwargs)
-            self.assertEqual(kwargs.get("proxies"), {"http": None, "https": None})
+        def fake_request(url, **_kwargs):
             if "bad" in url:
                 raise RuntimeError("network token=secret should not leak")
             return self._mock_response()
-        # This case verifies batch fail-open behavior and request isolation. URL/DNS
-        # validation has dedicated coverage below; keeping it out of this test also
-        # avoids coupling the aggregation contract to process-global DNS patching.
-        with patch.object(self.service, "_validate_url"), patch(
-            "src.services.intelligence_service.requests.get",
-            side_effect=fake_get,
+        # This case verifies batch fail-open behavior. URL/DNS validation and
+        # request construction have dedicated coverage below; mocking the service
+        # boundary prevents unrelated tests from replacing process-global requests.get.
+        with patch.object(self.service, "_validate_url"), patch.object(
+            self.service,
+            "_get_with_validated_dns",
+            side_effect=fake_request,
         ):
             result = self.service.fetch_enabled_sources()
         self.assertEqual(result["source_count"], 2)

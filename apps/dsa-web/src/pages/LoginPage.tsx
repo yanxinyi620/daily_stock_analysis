@@ -22,8 +22,15 @@ const LoginPage: React.FC = () => {
   }, [t]);
   const [searchParams] = useSearchParams();
   const rawRedirect = searchParams.get('redirect') ?? '';
+  // URL parsers normalize backslashes and strip control characters before navigation.
+  const hasUnsafeRedirectCharacters = rawRedirect.includes('\\') || Array.from(rawRedirect).some((character) => {
+    const code = character.charCodeAt(0);
+    return code < 32 || code === 127;
+  });
   const redirect =
-    rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : '/';
+    rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') && !hasUnsafeRedirectCharacters
+      ? rawRedirect
+      : '/';
 
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');

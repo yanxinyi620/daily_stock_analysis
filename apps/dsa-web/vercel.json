@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "installCommand": "npm ci",
+  "buildCommand": "npm run build:cloud",
+  "outputDirectory": "dist",
+  "routes": [
+    { "src": "/api/tasks", "dest": "/api/tasks" },
+    { "src": "/api(?:/.*)?", "status": 404 },
+    { "handle": "filesystem" },
+    { "src": "/.*", "dest": "/index.html", "headers": { "Cache-Control": "no-store" } }
+  ]
+}

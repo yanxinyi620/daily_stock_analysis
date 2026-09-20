@@ -7,34 +7,97 @@ import asyncio
 import concurrent.futures
 import os
 import shutil
+import sys
 import tempfile
 import time
 import threading
 from collections.abc import Awaitable, Callable
 from contextvars import copy_context
 from functools import wraps
+from pathlib import Path
+from unittest.mock import patch
+from urllib.parse import urlsplit
+from urllib.request import url2pathname
 from typing import Any, TypeVar
 from warnings import warn
 
 import anyio.to_thread
 import fastapi.testclient
 import httpx
+import pytest
+from dotenv.main import DotEnv
 import starlette.testclient
 from anyio._backends import _asyncio
 
 T = TypeVar("T")
 
 
-# Establish a test-only default before test modules import application config.
-# Individual tests may temporarily override DATABASE_PATH, but restoring it now
-# returns to this isolated database instead of the application's live database.
+# Capture protected paths before replacing the caller's database configuration.
+# The SQLite audit event also covers direct sqlite3/dbapi2 calls, SQLAlchemy,
+# URI paths and symlink aliases, before SQLite opens the file.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 _ORIGINAL_DATABASE_PATH = os.environ.get("DATABASE_PATH")
+_PROTECTED_DATABASE_PATHS = {
+    (_REPO_ROOT / "data/stock_analysis.db").resolve(),
+    Path("data/stock_analysis.db").resolve(),
+}
+for _env_path in {_REPO_ROOT / ".env", Path(os.environ.get("ENV_FILE") or _REPO_ROOT / ".env")}:
+    # Protect both normal environment-first interpolation and explicit override
+    # loading. Resolve without mutating os.environ or loading application config.
+    for _override in (False, True):
+        _configured_path = DotEnv(_env_path, override=_override).dict().get("DATABASE_PATH")
+        if _configured_path:
+            _PROTECTED_DATABASE_PATHS.add(Path(_configured_path).resolve())
+if _ORIGINAL_DATABASE_PATH:
+    _PROTECTED_DATABASE_PATHS.add(Path(_ORIGINAL_DATABASE_PATH).resolve())
+_DATABASE_GUARD_ACTIVE = True
+
+
+def _protect_application_database(event, args):
+    if not _DATABASE_GUARD_ACTIVE or event != "sqlite3.connect":
+        return
+    database = os.fsdecode(args[0])
+    if not database or database == ":memory:":
+        return
+    if database.startswith("file:"):
+        uri = urlsplit(database)
+        uri_path = uri.path if uri.netloc in ("", "localhost") else f"//{uri.netloc}{uri.path}"
+        database = url2pathname(uri_path)
+    if Path(database).resolve() in _PROTECTED_DATABASE_PATHS:
+        raise RuntimeError("pytest refused to open an application database; use a temporary database")
+
+
+sys.addaudithook(_protect_application_database)
 _PYTEST_DATABASE_DIR = tempfile.mkdtemp(prefix="daily-stock-analysis-pytest-")
-os.environ["DATABASE_PATH"] = os.path.join(_PYTEST_DATABASE_DIR, "stock_analysis.db")
+_PYTEST_DATABASE_PATH = os.path.join(_PYTEST_DATABASE_DIR, "stock_analysis.db")
+os.environ["DATABASE_PATH"] = _PYTEST_DATABASE_PATH
+
+
+@pytest.fixture(autouse=True)
+def _restore_test_environment_and_database_singletons():
+    """Legacy tearDown/pop and Config caches must not leak into the next test.
+
+    Keep class-scoped temporary database overrides, while restoring all changes
+    made by an individual test. The connection guard still fails closed when a
+    test clears its environment and falls back to the live database mid-test.
+    """
+    from src.config import Config
+    from src.storage import DatabaseManager
+
+    os.environ.setdefault("DATABASE_PATH", _PYTEST_DATABASE_PATH)
+    with patch.dict(os.environ):
+        DatabaseManager.reset_instance()
+        Config.reset_instance()
+        try:
+            yield
+        finally:
+            DatabaseManager.reset_instance()
+            Config.reset_instance()
 
 
 def pytest_sessionfinish(session, exitstatus) -> None:
     del session, exitstatus
+    global _DATABASE_GUARD_ACTIVE
     try:
         from src.storage import DatabaseManager
 
@@ -45,6 +108,7 @@ def pytest_sessionfinish(session, exitstatus) -> None:
         else:
             os.environ["DATABASE_PATH"] = _ORIGINAL_DATABASE_PATH
         shutil.rmtree(_PYTEST_DATABASE_DIR, ignore_errors=True)
+        _DATABASE_GUARD_ACTIVE = False
 
 _original_call_soon_threadsafe = asyncio.BaseEventLoop.call_soon_threadsafe
 

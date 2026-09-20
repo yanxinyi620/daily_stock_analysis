@@ -869,6 +869,21 @@ class Config:
     - 类方法 get_instance() 实现单例访问
     """
     
+    # === Optional cloud report publication (trusted Python environment only) ===
+    supabase_publish_enabled: bool = False
+    supabase_url: str = ""
+    supabase_secret_key: str = field(default="", repr=False)
+    supabase_publish_user_id: str = ""
+    supabase_publish_timeout: int = 30
+    enable_actions_dispatch: bool = False
+    # Only used by the explicit --runner mode; local CLI retains SQLite.
+    cloud_runner_database_url: str = field(default="", repr=False)
+    cloud_runner_id: str = "local-primary"
+    cloud_runner_heartbeat_seconds: int = 15
+    cloud_runner_online_seconds: int = 60
+    cloud_runner_claim_seconds: int = 30
+    cloud_runner_poll_seconds: int = 3
+
     # === 自选股配置 ===
     stock_list: List[str] = field(default_factory=list)
 
@@ -1784,6 +1799,19 @@ class Config:
             report_show_llm_model = False
 
         return cls(
+            supabase_publish_enabled=os.getenv('SUPABASE_PUBLISH_ENABLED', 'false').lower() == 'true',
+            supabase_url=os.getenv('SUPABASE_URL', ''),
+            supabase_secret_key=os.getenv('SUPABASE_SECRET_KEY', ''),
+            supabase_publish_user_id=os.getenv('SUPABASE_PUBLISH_USER_ID', ''),
+            supabase_publish_timeout=parse_env_int(os.getenv('SUPABASE_PUBLISH_TIMEOUT'), 30,
+                                                  field_name='SUPABASE_PUBLISH_TIMEOUT', minimum=1),
+            enable_actions_dispatch=os.getenv('ENABLE_ACTIONS_DISPATCH', 'false').lower() == 'true',
+            cloud_runner_database_url=os.getenv('CLOUD_RUNNER_DATABASE_URL', ''),
+            cloud_runner_id=os.getenv('CLOUD_RUNNER_ID', 'local-primary'),
+            cloud_runner_heartbeat_seconds=parse_env_int(os.getenv('CLOUD_RUNNER_HEARTBEAT_SECONDS'), 15, field_name='CLOUD_RUNNER_HEARTBEAT_SECONDS', minimum=1),
+            cloud_runner_online_seconds=parse_env_int(os.getenv('CLOUD_RUNNER_ONLINE_SECONDS'), 60, field_name='CLOUD_RUNNER_ONLINE_SECONDS', minimum=1),
+            cloud_runner_claim_seconds=parse_env_int(os.getenv('CLOUD_RUNNER_CLAIM_SECONDS'), 30, field_name='CLOUD_RUNNER_CLAIM_SECONDS', minimum=1),
+            cloud_runner_poll_seconds=parse_env_int(os.getenv('CLOUD_RUNNER_POLL_SECONDS'), 3, field_name='CLOUD_RUNNER_POLL_SECONDS', minimum=1),
             stock_list=stock_list,
             feishu_app_id=os.getenv('FEISHU_APP_ID'),
             feishu_app_secret=os.getenv('FEISHU_APP_SECRET'),
@@ -3072,6 +3100,16 @@ class Config:
             primary environment variable / field name it relates to.
         """
         issues: List[ConfigIssue] = []
+
+        if self.enable_actions_dispatch:
+            issues.append(ConfigIssue(severity="error", field="ENABLE_ACTIONS_DISPATCH",
+                                      message="网页 Actions 投递尚未实现，请保持 ENABLE_ACTIONS_DISPATCH=false。"))
+        if self.supabase_publish_enabled:
+            from src.services.cloud_publisher import CloudPublisher, PublishError
+            try:
+                CloudPublisher(self)
+            except PublishError as exc:
+                issues.append(ConfigIssue(severity="error", field="SUPABASE_PUBLISH_ENABLED", message=str(exc)))
 
         # --- Stock list ---
         if not self.stock_list:

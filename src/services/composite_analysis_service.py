@@ -71,6 +71,8 @@ class CompositeAnalysisService:
         progress_callback: Callable[..., Any],
         market_lock_token: Any = None,
         cancel_requested: Callable[[], bool] = lambda: False,
+        save_report_file: bool = True,
+        require_persisted_components: bool = False,
     ) -> Dict[str, Any]:
         scoped_config = copy.copy(self.config)
         scoped_config.report_type = snapshot.report_type
@@ -111,12 +113,25 @@ class CompositeAnalysisService:
             )
 
         progress_callback(phase="stocks", progress=5, message="开始分析自选股")
+        cloud_options = {}
+        if not save_report_file:
+            cloud_options["save_report_file"] = False
+        if require_persisted_components:
+            cloud_options["cancel_requested"] = cancel_requested
         results = pipeline.run(
             stock_codes=list(snapshot.stock_codes),
             send_notification=False,
             merge_notification=True,
             batch_item_callback=on_stock,
+            **cloud_options,
         )
+        if require_persisted_components:
+            # Validate after the batch, outside its fail-open progress callbacks.
+            for result in results:
+                query_id = getattr(result, 'query_id', None)
+                if not query_id or not self.database.get_analysis_history(query_id=query_id, code=result.code, limit=1):
+                    failures[result.code] = '个股分析历史未保存'
+            results = [result for result in results if result.code not in failures]
         successful_codes = {result.code for result in results}
         for code in snapshot.stock_codes:
             if code not in successful_codes and code not in failures:
@@ -152,6 +167,14 @@ class CompositeAnalysisService:
             market_report = str(getattr(review, "report", review) or "").strip()
             if not market_report:
                 raise RuntimeError("大盘复盘未返回报告")
+            if require_persisted_components:
+                rows = self.database.get_analysis_history(query_id=task_id, code='MARKET', limit=1)
+                if not rows or rows[0].report_type != 'market_review':
+                    raise RuntimeError('大盘复盘历史未保存')
+                from src.services.run_diagnostics import get_current_diagnostic_context
+                diagnostics = get_current_diagnostic_context()
+                if diagnostics is None or not any(run.success for run in diagnostics.llm_runs if run.call_type == 'market_review'):
+                    market_report = '> 大盘复盘使用模板生成，未获得成功的模型分析，请结合数据缺失提示阅读。\n\n' + market_report
         except Exception as exc:
             market_status = "failed"
             market_report = f"> 大盘复盘生成失败：{self._safe_error(exc)}"
@@ -175,7 +198,10 @@ class CompositeAnalysisService:
         )
         report = self._compose_report(snapshot, stock_report, market_report, failures)
         filename = f"composite_analysis_{datetime.now():%Y%m%d}_{task_id[:8]}.md"
-        report_path = pipeline.notifier.save_report_to_file(report, filename=filename)
+        if require_persisted_components:
+            outcome = '部分完成' if failures or market_status == 'failed' else '全部完成'
+            report = f'> 综合分析状态：{outcome}。\n\n{report}'
+        report_path = pipeline.notifier.save_report_to_file(report, filename=filename) if save_report_file else ''
         synthetic = AnalysisResult(
             code="COMPOSITE",
             name="今日综合分析",
@@ -199,6 +225,7 @@ class CompositeAnalysisService:
                 "market_review_status": market_status,
                 "notification_requested": snapshot.notify,
                 "report_path": report_path,
+                **({"stock_query_ids": {item.code: item.query_id for item in results}} if require_persisted_components else {}),
             },
         )
         if history_id <= 0:

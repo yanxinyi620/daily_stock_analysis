@@ -79,6 +79,7 @@ local/
 run.sh
 
 verify_*.py
+!scripts/verify_cloud_access.py
 
 # ignore Claude workspace artifacts, but keep shared repo skills versioned
 .claude/*
@@ -91,3 +92,9 @@ static/
 /apps/dsa-desktop/node_modules/
 /node_modules/
 docs/specs/
+
+# Private cloud retry snapshots and standalone cloud builds
+.cloud-publish/
+/apps/dsa-web/dist/
+
+!apps/dsa-web/.env.example

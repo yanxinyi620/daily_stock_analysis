@@ -3135,6 +3135,8 @@ class StockAnalysisPipeline:
         batch_item_callback: Optional[
             Callable[[str, str, Optional[AnalysisResult], Optional[str], int, int], None]
         ] = None,
+        save_report_file: bool = True,
+        cancel_requested: Optional[Callable[[], bool]] = None,
     ) -> List[AnalysisResult]:
         """
         运行完整的分析流程
@@ -3151,11 +3153,18 @@ class StockAnalysisPipeline:
             send_notification: 是否发送推送通知
             merge_notification: 是否合并推送（跳过本次推送，由 main 层合并个股+大盘后统一发送，Issue #190）
             current_time: 本轮运行冻结的参考时间；为空时在 run 内生成
+            save_report_file: 默认写入本地报告；云端持久化编排可关闭
+            cancel_requested: 可选停止谓词，在每项分析开始前检查，已运行的外部调用不会被强杀
 
         Returns:
             分析结果列表
         """
         start_time = time.time()
+
+        # Fail configuration errors before any potentially paid analysis.
+        if getattr(self.config, 'supabase_publish_enabled', False):
+            from src.services.cloud_publisher import CloudPublisher
+            CloudPublisher(self.config)
         
         # 使用配置中的股票列表
         if stock_codes is None:
@@ -3215,13 +3224,18 @@ class StockAnalysisPipeline:
         
         results: List[AnalysisResult] = []
         
+        def process_if_active(*args, **kwargs):
+            if cancel_requested is not None and cancel_requested():
+                return None
+            return self.process_single_stock(*args, **kwargs)
+
         # 使用线程池并发处理
         # 注意：max_workers 设置较低（默认3）以避免触发反爬
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             # 提交任务
             future_to_code = {
                 executor.submit(
-                    self.process_single_stock,
+                    process_if_active,
                     code,
                     skip_analysis=dry_run,
                     single_stock_notify=False,
@@ -3307,9 +3321,15 @@ class StockAnalysisPipeline:
         logger.info("===== 分析完成 =====")
         logger.info(f"成功: {success_count}, 失败: {fail_count}, 耗时: {elapsed_time:.2f} 秒")
         
-        # 保存报告到本地文件（无论是否推送通知都保存）
-        if results and not dry_run:
+        # 默认保留本地报告；云端编排可只保留数据库与发布包。
+        cloud_report_path = None
+        cloud_report_content = None
+        if results and not dry_run and save_report_file:
             self._save_local_report(results, report_type)
+            # Capture this run's content before notifications; the shared daily file
+            # may be replaced by another CLI run while notifications are in flight.
+            cloud_report_path = getattr(self, '_last_local_report_path', None)
+            cloud_report_content = getattr(self, '_last_local_report_content', None)
 
         # 发送通知（单股推送模式下跳过汇总推送，避免重复）
         if results and send_notification and not dry_run:
@@ -3324,6 +3344,18 @@ class StockAnalysisPipeline:
             else:
                 self._send_notifications(results, report_type)
         
+        if results and not dry_run and getattr(self.config, 'supabase_publish_enabled', False):
+            if not save_report_file:
+                cloud_report_content = self._generate_aggregate_report(results, report_type)
+            from src.services.cloud_publisher import publish_completed_report
+            try:
+                publish_completed_report(self.config, results, cloud_report_path, markdown=cloud_report_content)
+                logger.info("云端报告发布成功")
+            except Exception:
+                # Publication errors never erase analysis or suppress existing notifications.
+                # Avoid exception bodies: upstream responses may contain private data.
+                logger.error("云端发布失败；本地分析结果已保留。请使用 .cloud-publish 中的发布包重试，无需重新分析。")
+
         return results
 
     def _send_single_stock_notification(
@@ -3441,9 +3473,11 @@ class StockAnalysisPipeline:
         """保存分析报告到本地文件（与通知推送解耦）"""
         self._last_local_report_path = None
         self._last_local_report_error = None
+        self._last_local_report_content = None
         report: Optional[str] = None
         try:
             report = self._generate_aggregate_report(results, report_type)
+            self._last_local_report_content = report
         except Exception as e:
             self._last_local_report_error = str(e)
             logger.error("生成本地报告内容失败: %s", e)

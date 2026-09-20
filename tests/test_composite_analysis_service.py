@@ -156,3 +156,42 @@ def test_cancellation_after_stock_stage_skips_market_report_and_notification():
     assert result["status"] == "cancelled"
     database.save_analysis_history.assert_not_called()
     pipeline.notifier.send.assert_not_called()
+
+
+def test_cloud_mode_omits_files_and_marks_missing_component_history_partial():
+    service, pipeline, database = _service(results=[_result('600519'), _result('000858')])
+    pipeline.results[0].query_id = 'saved-stock'
+    pipeline.results[1].query_id = 'lost-stock'
+    database.get_analysis_history = MagicMock(side_effect=lambda **kw: [SimpleNamespace(report_type='market_review')] if kw['code']=='MARKET' else ([object()] if kw['query_id']=='saved-stock' else []))
+    result = service.run(CompositeAnalysisRequestSnapshot(('600519','000858'), notify=False),
+                         task_id='cloud', progress_callback=lambda **_: None,
+                         save_report_file=False, require_persisted_components=True)
+    assert result['status'] == 'partial' and result['stock_completed']==1 and result['stock_failed']==1
+    pipeline.notifier.save_report_to_file.assert_not_called()
+    pipeline.notifier.send.assert_not_called()
+    saved = database.save_analysis_history.call_args
+    assert '部分完成' in saved.kwargs['news_content'] and '模板' in saved.kwargs['news_content']
+    assert saved.kwargs['context_snapshot']['failed_stocks']==['000858']
+    assert result['report_path']==''
+
+
+def test_cloud_missing_market_history_is_failure_not_success():
+    service, pipeline, database = _service(results=[_result('600519')])
+    pipeline.results[0].query_id='saved-stock'
+    database.get_analysis_history=MagicMock(side_effect=lambda **kw: [] if kw['code']=='MARKET' else [object()])
+    result=service.run(CompositeAnalysisRequestSnapshot(('600519',),notify=False),task_id='cloud',
+                       progress_callback=lambda **_:None,save_report_file=False,require_persisted_components=True)
+    assert result['status']=='partial' and result['market_review_status']=='failed'
+    assert '部分完成' in database.save_analysis_history.call_args.kwargs['news_content']
+
+
+def test_cloud_history_query_failure_is_not_swallowed_by_progress_callback():
+    import pytest
+    service, pipeline, database = _service(results=[_result('600519')])
+    pipeline.results[0].query_id = 'saved-stock'
+    database.get_analysis_history = MagicMock(side_effect=RuntimeError('database unavailable'))
+    with pytest.raises(RuntimeError, match='database unavailable'):
+        service.run(CompositeAnalysisRequestSnapshot(('600519',),notify=False),task_id='cloud',
+                    progress_callback=lambda **_:None,save_report_file=False,require_persisted_components=True)
+    database.save_analysis_history.assert_not_called()
+    service.market_review_runner.assert_not_called()

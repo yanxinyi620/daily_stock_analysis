@@ -312,3 +312,19 @@ class TestPipelineSingleStockNotify(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_cloud_batch_skips_files_and_stops_starting_items_after_cancel():
+    pipeline = TestPipelineSingleStockNotify._build_batch_pipeline()
+    pipeline.max_workers = 1
+    stopped = threading.Event()
+    def process(code, **_kwargs):
+        stopped.set()
+        return _make_result(code)
+    pipeline.process_single_stock = MagicMock(side_effect=process)
+    result = pipeline.run(stock_codes=['000001', '600519'], send_notification=False,
+                          save_report_file=False, cancel_requested=stopped.is_set)
+    assert len(result)==1
+    pipeline.process_single_stock.assert_called_once()
+    pipeline._save_local_report.assert_not_called()
+    pipeline._send_notifications.assert_not_called()

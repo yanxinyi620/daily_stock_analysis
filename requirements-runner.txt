@@ -1,0 +1,2 @@
+# Optional dependency for the explicit cloud Runner; install with requirements.txt.
+psycopg[binary]>=3.1,<4

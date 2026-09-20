@@ -1,0 +1,97 @@
+# 本地 Runner 验收记录
+
+依据 [当前方案](vercel-supabase-plan.md) 与 [运行说明](local-runner.md)。下列 2026-09-18 记录只验收单股执行；2026-09-20 的大盘复盘与综合分析增量记录见后续章节。不是所有功能迁移完成。代码未提交或推送。
+
+## 本地已验证
+
+- 后端隔离副本执行 `scripts/ci_gate.sh`：5930 passed、4 deselected、503 subtests passed，gate 成功。副本不包含真实 `.env`、原数据库或报告；最终另行校验 Runner 配置边界，`tests/test_cloud_runner.py` 17 passed。
+- Web 全量回归：126 文件通过，1195 passed、2 skipped。
+- 云端专项：9 文件、41 passed，覆盖任务 API、真实 PostgreSQL 语义模拟的 RPC/RLS、旧会话迟到发布、报告与任务原子提交、私有 schema、离线按钮与轮询。
+- `npm ci`、`npm run lint`、`npm run build`、`npm run build:cloud` 成功。lint 留有既有 MobileChatPage hooks 警告，无错误。云端构建新增 NodeNext API 编译检查。
+- 首轮回归暴露两个既有测试问题：HTTP 全局 mock 干扰安全请求包装，以及固定日期离开 90 天筛选范围。分别调整测试作用域与使用相对时间，保留业务断言。
+
+## 远端已验证
+
+环境为 `daily-stock-analysis-restore`（txamwfxpbwcolsdlqiva）与 Vercel Preview；正式 Supabase/正式域名未切换。
+
+- 两项新增迁移原子应用；原报告、发布记录、自选股、成员的迁移前后摘要相同。新增私有 `dsa_engine` 33 张表；独立 SQLAlchemy 连接验证 schema、表、列及 TLS。
+- Vercel API 真实调用：所有者在线查询成功，另一测试账号返回 403；单股提交成功，同一请求重复提交返回同一执行记录。
+- 真实 Python Runner 使用已有行情/模型配置执行股票 000001。执行 ID `1df53d4d-564a-47d3-ad84-0e36f0e8c0b2`；报告 ID `1400b14e-d407-5d3e-aaec-b3ca4b97ee20`。
+- 2026-09-18 10:12:17.827 UTC 提交，10:18:05.442 UTC 完成，约 347.6 秒；进度 100、状态 succeeded。超过领取期限的长分析仍维持心跳，未被误判超时。
+- 最终预览部署为 https://daily-stock-analysis-4z67f3th3-dsa-449e.vercel.app（受 Vercel 部署保护）。离线 GET 返回 online=false；离线 POST 返回 409/RUNNER_OFFLINE，执行记录数量不变；另一用户仍返回 403。
+- 停止测试 Runner 后，新的数据库连接仍能读取一条对应引擎分析历史及一条公开 schema 中的私有用户报告。
+- 真实浏览器登录后显示离线、禁止提交；报告直达链接、刷新和私有 Markdown 附件下载成功。截图保存在仓库外 `/tmp/dsa-cloud-evidence/runner-offline.png`、`runner-report.png`，不合入。
+- 真实 Vercel 初次构建成功但请求失败，原因是函数 ESM 导入缺少 `.js`；修正后实际 API 调用通过，不能仅用 READY 判断功能通过。
+
+## 未验证与限制
+
+- 正式生产切换尚未执行；`stock.xinyilab.top` 保持原报告阅读部署。
+- 截至 2026-09-18，大盘复盘、综合分析、选股、回测、问股的新云端执行入口、Actions 日报、旧 SQLite 导入尚未实现；后续变化见增量记录。
+- 强杀、物理断网、机器重启及发布失败采用本地故障/协议测试覆盖；没有把这些场景全部在真实云端重复演练。当前仅一次真实单股样本，不代表所有市场、模型或行情源稳定性；执行时部分行情源失败后使用已有降级链路。
+- 实际浏览器验收使用环境提供的显式网络代理；不承诺其他网络均可直连。没有做长期负载、峰值内存或端到端延迟分位数测量。
+- 真实新任务保留，不清理旧数据。回滚为停止 Runner、回退前端部署；保留新增表及报告，不执行删表或恢复覆盖。
+
+此专题无对应英文版本，未扩写 README。
+
+## 2026-09-20 增量：单市场大盘复盘
+
+代码新增 `market_review` 任务和五个单市场选项（cn/hk/us/jp/kr），复用原大盘复盘入口与初始化模块；模型未成功时保留模板降级能力并明确标注。原单股、CLI/API 多市场入口继续保留。实施依据为 [增量计划](../superpowers/plans/2026-09-20-runner-market-review.md)。
+
+### 本地验证
+
+- 隔离副本完整 `scripts/ci_gate.sh` 通过：5947 passed、4 deselected、503 subtests passed，约 543 秒；其后补充的空结果/上下文清理用例包含在下述 158 项定向验证中。
+- 158 项定向后端测试通过：新 Runner 适配、真实复盘持久化流程（外部行情/模型替身）、空报告与历史保存失败、诊断上下文清理、原大盘运行和 API 契约。
+- 云端专项 9 文件、47 项通过；包括新 RPC/PGlite、五市场输入、非法输入、跨任务类型幂等冲突、离线/忙碌零写入及权限约束。
+- Web 完整回归 126 文件、1201 项通过、2 项跳过；lint 无错误（一个既有 MobileChatPage 警告）；普通构建、云端构建及 NodeNext API 编译通过。
+- 独立审查未发现协议、安全或持久化阻断项。`git diff --check` 通过。
+
+### 远端验证
+
+- 仅恢复项目应用 `202609200001_cloud_market_review.sql`；SHA256 `899b5345e1784d2fe38337cc1db75a1744c8dad6cc5305b8e694bc51dbf1b899`。原报告、发布账本、自选股、成员、执行记录、Runner 状态的迁移前后摘要一致；两个旧迁移文件摘要不变。
+- Vercel Preview：<https://daily-stock-analysis-2c0tovefs-dsa-449e.vercel.app>（受部署保护）。真实浏览器选择“大盘复盘 / A 股”提交成功，无股票代码字段要求。
+- 执行 ID `dd8b5165-fe04-4bd0-9297-c74f3608a5a0`；报告 ID `6c81bca4-8ed6-5c6a-993a-46dd893324fa`。2026-09-20 01:07:25.031 UTC 提交，01:09:10.251 UTC 完成，约 105.2 秒。状态 succeeded、进度 100。成功模型诊断对应的报告未触发模板提示，Markdown 2556 字符。
+- 真实重复提交返回同一任务；另一账号提交返回 403；`region=both` 返回 400。
+- Runner 正常退出后，独立数据库连接读取到一条 `MARKET` / `market_review` 引擎历史与一条关联报告。
+- A 账号可读取任务/报告及下载 Storage 附件；B 账号读不到该任务或报告，下载被拒绝。
+- 离线 GET 返回 online=false；POST 大盘复盘返回 409/RUNNER_OFFLINE，任务数量不增加。浏览器离线按钮禁用，报告直达、刷新、私有下载通过。首次离线探测未得到期望状态、浏览器等待超时；确认进程退出后重试全部通过，未改写测试为忽略离线断言。
+- UI/报告截图在仓库外 `/tmp/dsa-cloud-evidence/market-online.png`、`market-offline.png`、`market-report.png`。自动浏览器使用环境提供的显式代理。
+
+### 该阶段未验证范围与回滚
+
+真实执行仅验证一次 A 股复盘；其他四市场输入和协议经过本地测试，但尚未逐市场远端运行。2026-09-20 为非交易日，报告使用引擎可用行情且保留数据缺失/交易日期提示，不证明行情实时性或投资结论准确性。模板降级由本地测试覆盖，未额外消耗真实模型调用制造失败。
+
+大盘复盘验收时，综合分析、选股、回测、问股、独立 Actions 日报、旧历史导入和生产切换仍未完成；综合分析的后续验证见下一节。正式 Supabase 与 `stock.xinyilab.top` 未变更；测试 Runner 已停止。后续上线须先停止只认识单股的旧 Runner，再更新迁移、Runner 和匹配前端。回滚停止新 Runner、回退前端即可，保留新旧历史与新增表。代码未提交/推送，无新增配置项；中文专题无对应英文文档。
+
+## 2026-09-20 增量：综合分析
+
+实现依据为 [综合分析增量计划](../superpowers/plans/2026-09-20-runner-composite.md)。复用原综合服务与股票批处理，默认本地行为保留；云端关闭额外文件/通知/旧 CLI 发布，固定云端自选股快照并原子保存业务结果摘要。`succeeded` 表示报告发布成功，`result_summary.outcome` 区分 completed/partial；缺失摘要显示“结果待确认”。
+
+### 本地验证
+
+- 隔离完整后端 gate：5959 passed、4 deselected、503 subtests passed，约 550 秒。
+- 最终代码定向验证：76 passed，包括其后补充的恢复包身份校验、组件历史验证、空结果与取消、原组合 API、单股/复盘及发布路径。
+- 云端专项：9 文件、58 passed。覆盖服务端自选股排序与隔离、快照变化后的幂等重试、空/超限快照、输入注入、partial 摘要校验、全部 JSON null 字段拒绝、原子保存、完成 RPC 防绕过和权限不扩大。
+- Web：126 文件、1212 passed、2 skipped；lint 无错误（一个既有 MobileChatPage 警告），普通与云端构建通过。
+- 独立审查与补丁复核通过。子项历史检查放在批处理之后，避免被原 fail-open 进度回调吞掉；缺失历史明确计为失败，查询异常中止任务。旧 CLI/API 默认仍保存本地报告。
+
+### 远端环境与迁移
+
+- 只在恢复项目应用 `202609200002_cloud_composite.sql`；SHA256 `bd19da51a13b9636c9166ecfafcd454c0fa118e8baf2a6cccc6bc0577b89db72`。旧公开表和私有引擎历史的迁移前后摘要相同（比较执行记录时排除新增的空 result_summary 字段）。`report_type` 扩为 varchar(32)，不删除历史。
+- 预览版本：<https://daily-stock-analysis-q3s1pn55d-dsa-449e.vercel.app>（受部署保护）。正式 Supabase 与正式域名未切换。
+- 恢复项目 A 账号原自选股为空，经该账号权限追加一条 `000001 / 综合联调样本` 供真实测试；样本保留，未覆盖或删除既有自选股。
+- 浏览器选择“综合分析 / A 股”提交，服务端返回固定的一只自选股快照。重复请求返回原任务；B 账号提交 403；客户端传 stock_codes 被拒绝 400。
+
+### 真实综合执行与留存
+
+- 执行 ID `24825df0-0a7b-4719-bba3-71f73cd7cb34`；报告 ID `f95f3f5d-56eb-5be1-92ca-cdd57983d9a4`。
+- 2026-09-20 01:28:35.026 UTC 提交，01:34:29.241 UTC 完成，约 354.2 秒。执行 succeeded、业务 completed，成功股票 1、失败 0、大盘 completed。公开报告 6691 字符，未触发模板降级提示。
+- 进程正常退出后，独立连接确认：历史类型字段实际宽度 32、一条已保存的个股历史、一条大盘历史、一条 COMPOSITE 历史及一条云端报告；子项 query_id 从综合历史映射反查。
+- 隔离运行目录没有生成本地业务 SQLite 文件或额外报告文件；业务数据依赖 Supabase，私有发布包仅用于恢复。
+- A 账号可读任务/报告并下载附件，B 账号查不到该任务与报告且不能下载对应 Storage 文件。
+- 停止 Runner 后 GET online=false，POST 综合任务返回 409/RUNNER_OFFLINE 且执行记录数量不变；浏览器按钮禁用，报告直达链接、刷新和私有 Markdown 下载通过。截图保存在仓库外 `/tmp/dsa-cloud-evidence/composite-online.png`、`composite-offline.png`、`composite-report.png`。浏览器使用环境提供的显式代理。
+
+### 未验证与后续范围
+
+本轮远端仅验证一只 A 股自选股加 A 股复盘的完整成功路径。多股票、跨市场、真实部分失败、真实断网/强杀在本轮未重复运行；部分完成、失败摘要、原子性、取消和恢复包错误由本地确定性测试覆盖，不以真实单样本代替这些场景。非交易日数据和模型结论准确性不属于部署通过的证明。
+
+选股、回测、问股、Actions 日报、旧 SQLite 导入、生产切换仍待后续。测试样本和新增报告保留；测试 Runner 停止后可回退前端停用功能，不删除历史或逆向缩短数据库字段。没有新增配置变量、付费资源或域名变更，未提交/推送代码。专题无对应英文文档；README 未扩写。

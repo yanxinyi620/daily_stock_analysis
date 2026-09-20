@@ -212,8 +212,9 @@ const getVendorChunkName = (id: string): string | undefined => {
 }
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   define: {
+    ...(mode === 'cloud' ? { 'import.meta.env.VITE_DATA_BACKEND': JSON.stringify('supabase') } : {}),
     __APP_PACKAGE_VERSION__: JSON.stringify(appVersion),
     __APP_REVISION__: JSON.stringify(appRevision),
     __APP_BUILD_TIME__: JSON.stringify(buildTime),
@@ -247,4 +248,4 @@ export default defineConfig({
       },
     },
   },
-})
+}))

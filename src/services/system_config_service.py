@@ -201,6 +201,8 @@ class SystemConfigService:
         }
     }
     _SERVER_MASKED_CONFIG_KEYS: Set[str] = {
+        "SUPABASE_SECRET_KEY",
+        "CLOUD_RUNNER_DATABASE_URL",
         "LLM_HERMES_API_KEY",
         "LLM_HERMES_API_KEYS",
         "LLM_HERMES_EXTRA_HEADERS",

@@ -1,0 +1,7 @@
+# Never upload local credentials or generated output with frontend source.
+.env
+.env.*
+node_modules
+dist
+coverage
+.playwright-cli
