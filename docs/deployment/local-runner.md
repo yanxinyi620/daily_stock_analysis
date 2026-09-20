@@ -1,6 +1,6 @@
 # 本地 Runner：单股、大盘复盘与综合分析
 
-当前开发依据为 [云端改造方案](vercel-supabase-plan.md)。已实现单股、单市场大盘复盘与云端自选股综合分析；选股、回测、问股和每日 Actions 尚未接入新执行协议。旧本地功能继续保留。
+当前开发依据为 [云端改造方案](vercel-supabase-plan.md)。已实现单股、单市场大盘复盘与云端自选股综合分析；选股、回测、问股尚未接入新执行协议；每日 Actions 接入见[专题说明](cloud-daily-actions.md)。旧本地功能继续保留。
 
 ## 运行边界
 
@@ -21,6 +21,7 @@
 3. `supabase/migrations/202609180002_cloud_engine.sql`（私有引擎存储）。
 4. `supabase/migrations/202609200001_cloud_market_review.sql`（扩展单市场大盘复盘）。
 5. `supabase/migrations/202609200002_cloud_composite.sql`（综合分析快照、业务结果摘要、私有历史类型字段扩宽）。
+6. `supabase/migrations/202609200003_cloud_daily_actions.sql`（可选每日 Actions 原子接入；沿用原快照和发布协议）。
 
 迁移只新增，不接管同名已有 schema，不删除恢复项目或正式项目中的历史。私有 schema 应由可信数据库连接使用，不能添加到 Supabase 的 exposed schemas。运行凭据需要该私有 schema 的 DML/sequence 权限；建表凭据仅在迁移时使用。迁移本身不向浏览器角色授予这些权限。
 
@@ -81,4 +82,4 @@ Vercel 服务端配置 `SUPABASE_URL`、`SUPABASE_SECRET_KEY`、`SUPABASE_PUBLIS
 
 回滚 Vercel 至原报告阅读部署、停止 Runner 即可停用新执行功能。原 CLI/桌面端保留；不要为回滚删除新增表、报告或 SQLite 备份。已经写入云端的数据留存，旧 SQLite 不双向同步。
 
-本轮并未完成选股、回测与问股、聊天页面云端历史、Actions 定时综合分析、旧 SQLite 一次性导入或 Docker Runner 启动服务。功能是否已在真实平台验证以 [Runner 验证记录](local-runner-validation.md) 为准，不使用旧报告站验收替代。此中文专题无对应英文文档，未修改 README。
+本轮并未完成选股、回测与问股、聊天页面云端历史、旧 SQLite 一次性导入或 Docker Runner 启动服务。功能是否已在真实平台验证以 [Runner 验证记录](local-runner-validation.md) 为准，不使用旧报告站验收替代。此中文专题无对应英文文档，未修改 README。

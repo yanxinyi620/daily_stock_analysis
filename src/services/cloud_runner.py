@@ -95,6 +95,10 @@ class CloudRunner:
     def start(self):
         self._rpc('cloud_runner_register', p_online_seconds=self.settings.online_seconds,
                   p_claim_seconds=self.settings.claim_seconds)
+        self.start_existing()
+
+    def start_existing(self):
+        """Attach heartbeats to a session registered by an atomic submit RPC."""
         self.heartbeat_thread = threading.Thread(target=self._heartbeat, name='cloud-runner-heartbeat', daemon=True)
         self.heartbeat_thread.start()
 
@@ -167,6 +171,7 @@ class CloudRunner:
             error = 'COMPLETION_UNCONFIRMED'
             self._rpc('cloud_finish_execution', p_task_id=task_id, p_report_id=report_id,
                       p_error_code=None)
+            return True
         except Exception:
             logger.error('Cloud task did not complete: %s', error)
             try:
@@ -175,6 +180,7 @@ class CloudRunner:
             except RunnerError:
                 # Preserve package, leave the authoritative lease to reconcile the task.
                 logger.error('Cloud task failure could not be confirmed; no automatic analysis retry')
+            return False
 
     def run(self):
         self.start()
@@ -227,7 +233,7 @@ def execute_analysis(config, task, progress, *, cancel_requested=lambda: False):
     return execute_stock(config, task, progress)
 
 
-def execute_composite(config, task, progress, *, cancel_requested=lambda: False):
+def execute_composite(config, task, progress, *, cancel_requested=lambda: False, trigger_source='local_runner'):
     """Run the existing composite service against the immutable cloud watchlist."""
     from src.services.composite_analysis_service import CompositeAnalysisService, CompositeAnalysisRequestSnapshot
     from src.services.run_diagnostics import activate_run_diagnostic_context, reset_run_diagnostic_context
@@ -242,7 +248,7 @@ def execute_composite(config, task, progress, *, cancel_requested=lambda: False)
                                                 region=task['input_json']['region'])
     db = DatabaseManager.get_instance()
     token = activate_run_diagnostic_context(trace_id=task['id'], task_id=task['id'], query_id=task['id'],
-                                           stock_code='COMPOSITE', trigger_source='local_runner', scope='composite_analysis')
+                                           stock_code='COMPOSITE', trigger_source=trigger_source, scope='composite_analysis')
     try:
         result = CompositeAnalysisService(scoped, database=db).run(
             snapshot, task_id=task['id'], progress_callback=lambda **event: progress(event['progress'], event.get('message', '')),
