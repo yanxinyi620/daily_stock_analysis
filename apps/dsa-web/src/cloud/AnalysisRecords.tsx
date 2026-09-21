@@ -100,7 +100,7 @@ export function AnalysisRecords({ api, user, revision, pageSize, formatDate, onC
             <td>{source(row)}</td>
             <td><span className={`cloud-save-state is-${state.tone}`}>{state.label}</span></td>
             <td><time dateTime={row.report?.generated_at || row.updated_at}>{formatDate(row.report?.generated_at || row.updated_at)}</time></td>
-            <td><div className="cloud-record-actions">{row.report ? <><Link to={`/reports/${row.id}`}>查看</Link><button disabled={downloading !== undefined} aria-label={`下载 ${title(row)}`} onClick={() => void download(row.id)}>{downloading === row.id ? '下载中…' : '下载'}</button></> : <span className="cloud-muted">暂无报告</span>}
+            <td><div className="cloud-record-actions">{row.report ? <button disabled={downloading !== undefined} aria-label={`下载 ${title(row)}`} onClick={() => void download(row.id)}>{downloading === row.id ? '下载中…' : '下载'}</button> : <span className="cloud-muted">暂无报告</span>}
               {trash ? <><button disabled={changing || Boolean(row.purge_started_at)} aria-label={`恢复 ${title(row)}`} onClick={() => void changeDeleted(row.id, false)}>恢复</button><button className="cloud-delete-action" disabled={changing || active} aria-label={`永久删除 ${title(row)}`} onClick={() => { setPermanent(true); setChangeError(''); setPendingDelete(row); }}>{row.purge_started_at ? '重试删除' : '永久删除'}</button></>
                 : <button className="cloud-delete-action" disabled={changing || active} aria-label={`删除 ${title(row)}`} onClick={() => { setPermanent(false); setChangeError(''); setPendingDelete(row); }}>删除</button>}
             </div></td>

@@ -381,9 +381,13 @@
   overflow-wrap: anywhere;
   font-weight: 500;
 }
-.cloud-record-title a:hover,
-.cloud-record-actions a:hover {
+.cloud-record-title a {
   color: #61bda7;
+  text-underline-offset: 4px;
+}
+.cloud-record-title a:hover,
+.cloud-record-title a:focus-visible {
+  text-decoration: underline;
 }
 .cloud-records-table time {
   white-space: nowrap;

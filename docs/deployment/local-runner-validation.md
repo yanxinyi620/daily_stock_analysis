@@ -167,3 +167,9 @@
 - 按用户要求删除「分析工作台」与「发起分析，回看每一次判断。」及空容器、样式，左侧自选股直接与右侧面板顶部对齐。
 - 本地云端 101 项测试和构建通过；lint 无错误，仅既有 MobileChatPage Hook warning。正式部署 `dpl_6EeXrjuwP1kHEsbfBME4SFVYuQix` 已绑定正式域名；浏览器验证两行文案消失、桌面左右栏对齐、手机顺序与无溢出通过。证据在仓库外 `/tmp/dsa-intro-browser-production.log`、`/tmp/dsa-intro-production-desktop.png`、`/tmp/dsa-intro-production-mobile.png`。
 - 仅展示调整，无数据操作；未重跑分析或删除报告。回滚可恢复部署 `dpl_FdwFYd9kjJ3EJ8a8sqd6uHhbyGcr`。中文专题无对应英文版本。
+
+## 2026-09-21 报告名称作为唯一查看入口
+
+- 保留报告名称链接，使用链接颜色与悬停／键盘焦点下划线；操作栏移除重复「查看」，下载、删除及回收站操作保持原行为。
+- 本地云端 101 项测试与构建通过，lint 无错误（既有 MobileChatPage Hook warning）。正式部署 `dpl_6nmPF5PZdzKUfXJei8sqoRoGLVrk` 已绑定正式域名；浏览器真实登录验证名称跳转详情并返回、键盘焦点下划线、操作栏无重复链接、桌面和手机布局通过。初次脚本仅程序设置焦点不能模拟键盘模式，补实际 Tab 操作后通过。
+- 证据在仓库外 `/tmp/dsa-links-browser-production.log`、`/tmp/dsa-links-production-desktop.png`、`/tmp/dsa-links-production-mobile.png`。未重跑分析、下载或删除，功能未变且本轮仅展示与跳转验收。无数据库变更，可回滚至 `dpl_6EeXrjuwP1kHEsbfBME4SFVYuQix`；中文专题无对应英文版本。
