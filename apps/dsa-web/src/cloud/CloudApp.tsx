@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { BrowserRouter, Link, Route, Routes, useParams } from 'react-router-dom';
 import { ReportMarkdownBody } from '../components/report/ReportMarkdownBody';
-import { cloudData, createCloudClient, type CloudData, type CloudReport, type Market, type ReportIndex, type WatchItem } from './client';
-import { usePublishTasks } from './usePublishTasks';
+import { cloudData, createCloudClient, type CloudData, type CloudReport, type Market, type WatchItem } from './client';
+import { AnalysisRecords } from './AnalysisRecords';
 import { RunnerPanel } from './RunnerPanel';
 import './cloud.css';
 
@@ -87,28 +87,6 @@ function Watchlist({ api, user }: { api: CloudData; user: string }) {
   </section>;
 }
 
-function Reports({ api, user, revision }: { api: CloudData; user: string; revision: number }) {
-  const [page, setPage] = useState(0); const [rows, setRows] = useState<ReportIndex[]>([]);
-  const [count, setCount] = useState(0); const [error, setError] = useState(''); const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    let current = true;
-    api.reports(user, page, pageSize).then((result) => {
-      if (current) { setRows(result.rows); setCount(result.count); setError(''); }
-    }).catch(() => { if (current) setError(requestError); }).finally(() => { if (current) setLoading(false); });
-    return () => { current = false; };
-  }, [api, user, page, revision]);
-  return <section className="cloud-panel">
-    <div className="cloud-section-heading"><h2>分析报告</h2><span>{count} 份</span></div>
-    {error && <p role="alert">{error}</p>}
-    {loading ? <p>加载中…</p> : <ul className="cloud-list cloud-reports">{rows.map((row) => <li key={row.task_id}>
-      <Link to={`/reports/${row.task_id}`}><strong>{row.title}</strong><small>生成于 {date(row.generated_at)}</small></Link><span aria-hidden="true">↗</span>
-    </li>)}</ul>}
-    {!loading && !rows.length && !error && <p className="cloud-muted">还没有报告。Python 发布完成后，刷新即可查看。</p>}
-    <div className="cloud-pagination"><button disabled={page === 0} onClick={() => { setLoading(true); setPage((n) => n - 1); }}>上一页</button>
-      <span>第 {page + 1} 页</span><button disabled={(page + 1) * pageSize >= count} onClick={() => { setLoading(true); setPage((n) => n + 1); }}>下一页</button></div>
-  </section>;
-}
-
 function ReportDetail({ api, user }: { api: CloudData; user: string }) {
   const { id = '' } = useParams(); const [report, setReport] = useState<CloudReport>();
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
@@ -151,22 +129,16 @@ function Account({ client }: { client: SupabaseClient }) {
 
 function Workspace({ client, session, api, logout }: { client: SupabaseClient; session: Session; api: CloudData; logout: () => void }) {
   const [revision, setRevision] = useState(0);
-  const tasks = usePublishTasks(api, session.user.id, revision);
-  const labels = { publishing: '发布中', publish_failed: '发布失败，可从本地发布包重试', succeeded: '已发布', cancelled: '已取消发布' };
   return <BrowserRouter><div className="cloud-workspace">
     <header className="cloud-header"><Link to="/" className="cloud-brand">DSA <span>研究档案</span></Link>
       <div className="cloud-actions"><span className="cloud-muted">{session.user.email}</span><button onClick={logout}>退出登录</button></div></header>
     <Routes><Route path="/reports/:id" element={<ReportDetailRoute api={api} user={session.user.id} />} />
-      <Route path="/" element={<><div className="cloud-intro"><div><div className="cloud-eyebrow">YOUR RESEARCH LIBRARY</div><h1>每一次分析，都有记录。</h1><p className="cloud-muted">仅你可见的自选股、报告与发布进度。</p></div>
+      <Route path="/" element={<><div className="cloud-intro"><div><div className="cloud-eyebrow">YOUR RESEARCH LIBRARY</div><h1>每一次分析，都有记录。</h1><p className="cloud-muted">仅你可见的自选股、报告与保存状态。</p></div>
         <button onClick={() => setRevision((n) => n + 1)}>刷新</button></div>
         <div className="cloud-grid"><Watchlist api={api} user={session.user.id} /><div className="cloud-stack">
           <RunnerPanel client={client} accessToken={session.access_token} user={session.user.id} onReport={() => setRevision((n) => n + 1)} />
-          <Reports api={api} user={session.user.id} revision={revision} />
-          <section className="cloud-panel"><h2>最近发布</h2>{tasks.error && <p role="alert">状态查询失败，稍后重试。</p>}
-            {!tasks.rows.length && <p className="cloud-muted">暂无发布记录。</p>}
-            <ul className="cloud-list">{tasks.rows.map((task) => <li key={task.id}><span>{labels[task.status]}<small>{date(task.updated_at)}</small></span></li>)}</ul>
-            <small className="cloud-muted">这里展示 Python 结果上传到云端的发布进度。</small>
-          </section><Account client={client} /></div></div></>} />
+          <Account client={client} /></div>
+          <AnalysisRecords api={api} user={session.user.id} revision={revision} pageSize={pageSize} formatDate={date} /></div></>} />
       <Route path="*" element={<main className="cloud-panel">页面不存在。<Link to="/">返回报告列表</Link></main>} /></Routes>
     <footer className="cloud-muted">分析仅供研究参考 · 时间显示：{displayZone}</footer>
   </div></BrowserRouter>;

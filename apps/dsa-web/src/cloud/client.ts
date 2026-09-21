@@ -5,6 +5,27 @@ export interface WatchItem { id: string; market: Market; code: string; name: str
 export interface ReportIndex { task_id: string; title: string; generated_at: string; market_as_of: string | null }
 export interface CloudReport extends ReportIndex { markdown: string; bucket: string; object_path: string }
 export interface PublishTask { id: string; status: 'publishing' | 'publish_failed' | 'succeeded' | 'cancelled'; updated_at: string }
+export interface RecordExecution {
+  id: string;
+  report_id: string;
+  runner_id: string | null;
+  task_type: string;
+  status: string;
+  result_summary: {
+    outcome?: string;
+    stock_completed?: number;
+    stock_failed?: number;
+    market_review_status?: string;
+  } | null;
+}
+export interface AnalysisRecord {
+  id: string;
+  status: PublishTask['status'];
+  updated_at: string;
+  codes: string[];
+  report: ReportIndex | null;
+  execution: RecordExecution | null;
+}
 
 let sharedClient: { url: string; key: string; client: SupabaseClient } | undefined;
 
@@ -63,26 +84,49 @@ export function cloudData(client: SupabaseClient) {
     async deleteWatch(user: string, id: string) {
       checked(await client.from('watchlists').delete().eq('user_id', user).eq('id', id));
     },
-    async reports(user: string, page: number, size: number) {
-      const result = await client.from('analysis_reports').select('task_id,title,generated_at,market_as_of', { count: 'exact' })
-        .eq('user_id', user).order('created_at', { ascending: false }).order('task_id')
-        .range(page * size, (page + 1) * size - 1);
-      return { rows: (checked(result) ?? []) as ReportIndex[], count: result.count ?? 0 };
+    async records(user: string, page: number, size: number) {
+      const [taskResult, activeResult] = await Promise.all([
+        client.from('analysis_tasks')
+          .select('id,status,updated_at,codes:input_snapshot->codes,analysis_reports(task_id,title,generated_at,market_as_of)', { count: 'exact' })
+          .eq('user_id', user).order('updated_at', { ascending: false }).order('id')
+          .range(page * size, (page + 1) * size - 1),
+        client.from('analysis_tasks').select('id', { count: 'exact', head: true })
+          .eq('user_id', user).eq('status', 'publishing'),
+      ]);
+      const tasks = (checked(taskResult) ?? []) as Array<{
+        id: string;
+        status: string;
+        updated_at: string;
+        codes?: unknown;
+        analysis_reports?: ReportIndex | ReportIndex[] | null;
+      }>;
+      checked(activeResult);
+      const ids = tasks.map((task) => task.id);
+      let executions: RecordExecution[] = [];
+      if (ids.length > 0) {
+        executions = (checked(await client.from('execution_tasks')
+          .select('id,report_id,runner_id,task_type,status,result_summary')
+          .eq('user_id', user).in('report_id', ids)) ?? []) as RecordExecution[];
+      }
+      const executionByReport = new Map<string, RecordExecution>();
+      for (const execution of executions) {
+        if (!executionByReport.has(execution.report_id)) executionByReport.set(execution.report_id, execution);
+      }
+      return {
+        rows: tasks.map((task) => {
+          const report = Array.isArray(task.analysis_reports) ? task.analysis_reports[0] ?? null : task.analysis_reports ?? null;
+          const codes = Array.isArray(task.codes) ? task.codes.filter((code): code is string => typeof code === 'string') : [];
+          return { id: task.id, status: task.status, updated_at: task.updated_at, codes, report, execution: executionByReport.get(task.id) ?? null };
+        }) as AnalysisRecord[],
+        count: taskResult.count ?? 0,
+        active: (activeResult.count ?? 0) > 0 || tasks.some((task) => task.status === 'publishing'),
+      };
     },
     async report(user: string, id: string): Promise<CloudReport> {
       const data = checked(await client.from('analysis_reports').select('task_id,title,markdown,bucket,object_path,generated_at,market_as_of')
         .eq('user_id', user).eq('task_id', id).single());
       if (!data) throw new Error('报告不存在或无权访问。');
       return data as CloudReport;
-    },
-    async tasks(user: string) {
-      const [recent, active] = await Promise.all([
-        client.from('analysis_tasks').select('id,status,updated_at').eq('user_id', user)
-          .order('updated_at', { ascending: false }).limit(20),
-        client.from('analysis_tasks').select('id', { count: 'exact', head: true }).eq('user_id', user).eq('status', 'publishing'),
-      ]);
-      checked(active);
-      return { rows: (checked(recent) ?? []) as PublishTask[], active: (active.count ?? 0) > 0 };
     },
     async download(report: CloudReport) {
       // Authenticated download; no signed URL persisted, cached or logged.

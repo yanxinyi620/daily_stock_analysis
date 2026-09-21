@@ -17,7 +17,7 @@ beforeEach(() => {
   };
   data = {
     member: vi.fn().mockResolvedValue(true), watchlist: vi.fn().mockResolvedValue([]),
-    reports: vi.fn().mockResolvedValue({ rows: [{ task_id: 'report-a', title: '私人报告 A', generated_at: '2026-09-14T00:00:00Z' }], count: 1 }),
+    records: vi.fn().mockResolvedValue({ rows: [{ id: 'report-a', status: 'succeeded', updated_at: '2026-09-14T00:00:00Z', codes: [], execution: null, report: { task_id: 'report-a', title: '私人报告 A', generated_at: '2026-09-14T00:00:00Z' } }], count: 1, active: false }),
     report: vi.fn().mockResolvedValue({ task_id: 'report-a', title: '私人报告 A', markdown: '# 正文\n<script>window.hacked=1</script>', object_path: 'a/report.md', bucket: 'analysis-reports', generated_at: '2026-09-14T00:00:00Z' }),
     tasks: vi.fn().mockResolvedValue({ rows: [], active: false }), saveWatch: vi.fn(), deleteWatch: vi.fn(), download: vi.fn(),
   };
@@ -61,14 +61,26 @@ test('a late previous-user response cannot leak into a new session', async () =>
   auth.getSession.mockResolvedValue({ data: { session }, error: null });
   let finishA: (value: unknown) => void = () => {};
   const delayed = new Promise((resolve) => { finishA = resolve; });
-  data.reports.mockImplementation((user: string) => user === 'user-a' ? delayed : Promise.resolve({
-    rows: [{ task_id: 'report-b', title: '私人报告 B', generated_at: '2026-09-14T00:00:00Z' }], count: 1,
+  data.records.mockImplementation((user: string) => user === 'user-a' ? delayed : Promise.resolve({
+    rows: [{ id: 'report-b', status: 'succeeded', updated_at: '2026-09-14T00:00:00Z', codes: [], execution: null, report: { task_id: 'report-b', title: '私人报告 B', generated_at: '2026-09-14T00:00:00Z' } }], count: 1, active: false,
   }));
   render(<CloudApp />);
-  await waitFor(() => expect(data.reports).toHaveBeenCalledWith('user-a', 0, 20));
+  await waitFor(() => expect(data.records).toHaveBeenCalledWith('user-a', 0, 20));
   act(() => listener('SIGNED_IN', { user: { id: 'user-b', email: 'b@example.test' }, access_token: 'token-b' }));
   await screen.findByText('私人报告 B');
-  await act(async () => finishA({ rows: [{ task_id: 'report-a', title: '私人报告 A', generated_at: '2026-09-14T00:00:00Z' }], count: 1 }));
+  await act(async () => finishA({ rows: [{ id: 'report-a', status: 'succeeded', updated_at: '2026-09-14T00:00:00Z', codes: [], execution: null, report: { task_id: 'report-a', title: '私人报告 A', generated_at: '2026-09-14T00:00:00Z' } }], count: 1, active: false }));
   expect(screen.queryByText('私人报告 A')).not.toBeInTheDocument();
   expect(screen.getByText('私人报告 B')).toBeInTheDocument();
+});
+
+
+test('one records table replaces the duplicate publishing section without inventing analysis success', async () => {
+  auth.getSession.mockResolvedValue({ data: { session }, error: null });
+  render(<CloudApp />);
+  await screen.findByText('私人报告 A');
+  expect(screen.getByRole('table', { name: '分析记录' })).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: '最近发布' })).not.toBeInTheDocument();
+  expect(screen.queryByText('已发布')).not.toBeInTheDocument();
+  expect(screen.getByText('已保存')).toBeInTheDocument();
+  expect(screen.queryByText('全部完成')).not.toBeInTheDocument();
 });

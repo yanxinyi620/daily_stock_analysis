@@ -112,3 +112,12 @@
 - 回滚：停止 Runner 并将 Vercel 恢复为此前报告阅读部署 `dpl_DzYoPJoeguFrupDVqoz9RgJFEesD`；保留新增表、迁移和所有历史数据。已执行迁移保持原始内容与摘要，不为格式调整重写迁移文件。
 
 本文为中文部署专题，无对应英文版本；未扩展 README。
+
+## 2026-09-21 分析记录合并验收
+
+- 页面合并为单一分析记录表，保留报告查看、私有下载、保存失败记录、分页和后台轮询；分析结果与保存状态分列。旧数据缺少来源或结果摘要时显示“未记录”。
+- 本地验证：完整前端测试 1,225 项通过、2 项跳过；lint 无错误（既有 MobileChatPage Hook 警告 1 条）；普通版与云端版构建均通过。浏览器连接真实 Supabase，A 账号 4 份报告显示为 4 行，来源和结果正确，私有下载及手机宽度检查通过。
+- 本轮不修改数据库、Storage 策略或历史数据。失败、分页重试与轮询回归由本地测试覆盖；不在生产创建失败任务来验证展示。
+- 页面截图保存在仓库外 `/tmp/dsa-records-before-desktop.png`、`/tmp/dsa-records-local-desktop.png`、`/tmp/dsa-records-local-mobile.png`，不作为仓库文件提交。
+- 回滚本次 UI：将 Vercel 恢复到 `dpl_7BiSfxabpqYC7SXARVExz9awz9iP`；无数据库回滚步骤。
+- 远端验证：正式部署 `dpl_4b7tg9Y1WiTNhRegVXSe3zppXAur` 为 READY，已绑定 `https://stock.xinyilab.top`。上线后 A 账号真实浏览器登录、4 行唯一记录、每日定时来源与全部完成摘要、私有下载、手机页面宽度及无页面异常检查通过。证据为仓库外 `/tmp/dsa-records-browser-production.log`、`/tmp/dsa-records-production-desktop.png`、`/tmp/dsa-records-production-mobile.png`。本轮未重新执行分析引擎或制造生产失败任务，B 账号远端隔离沿用先前验收，相关权限策略未修改。
