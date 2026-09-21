@@ -67,13 +67,6 @@
   margin-left: 12px;
   letter-spacing: 0.05em;
 }
-.cloud-intro {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 20px;
-  padding: 0 0 20px;
-}
 .cloud-panel {
   border: 1px solid #8090a32b;
   border-radius: 12px;
@@ -98,9 +91,6 @@
   grid-template-columns: 252px minmax(0, 1fr);
   align-items: start;
   gap: 24px;
-}
-.cloud-sidebar {
-  min-width: 0;
 }
 .cloud-stack {
   display: grid;

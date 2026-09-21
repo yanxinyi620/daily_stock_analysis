@@ -134,7 +134,7 @@ test('closing an edit dialog returns focus to that stocks edit button', async ()
 test('refresh sits beside the brand in the header', async () => {
   auth.getSession.mockResolvedValue({ data: { session }, error: null });
   render(<CloudApp />);
-  await screen.findByRole('heading', { name: '分析工作台' });
+  await screen.findByRole('heading', { name: '我的自选股' });
   const header = screen.getByRole('banner');
   expect(within(header).getByRole('button', { name: '刷新' })).toBeInTheDocument();
   expect(screen.getAllByRole('button', { name: '刷新' })).toHaveLength(1);

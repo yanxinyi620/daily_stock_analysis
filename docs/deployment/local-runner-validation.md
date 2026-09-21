@@ -161,3 +161,9 @@
 - 本地云端 101 项测试、构建通过；lint 无错误，仅既有 MobileChatPage Hook warning。浏览器连接恢复项目实测桌面坐标和手机无溢出通过；Runner 离线响应为模拟，此次不验证引擎执行或删除行为。
 - 本地截图保存在仓库外 `/tmp/dsa-layout-local-desktop.png` 和 `/tmp/dsa-layout-local-mobile.png`。仅页面结构和间距改变，无数据库迁移或数据操作；可回滚至 `dpl_HdDZX2Ux3dhDrrAUMvk1h9wY7m83`。中文专题无对应英文版本。
 - 正式部署 `dpl_FdwFYd9kjJ3EJ8a8sqd6uHhbyGcr` 已绑定正式域名；真实登录后的桌面 20px 间距、标题与右侧顶部对齐、手机纵向顺序和无溢出均通过。证据：`/tmp/dsa-layout-browser-production.log`、`/tmp/dsa-layout-production-desktop.png`、`/tmp/dsa-layout-production-mobile.png`。未重新运行分析或删除报告，此次仅布局验收。
+
+## 2026-09-21 移除重复介绍文案
+
+- 按用户要求删除「分析工作台」与「发起分析，回看每一次判断。」及空容器、样式，左侧自选股直接与右侧面板顶部对齐。
+- 本地云端 101 项测试和构建通过；lint 无错误，仅既有 MobileChatPage Hook warning。正式部署 `dpl_6EeXrjuwP1kHEsbfBME4SFVYuQix` 已绑定正式域名；浏览器验证两行文案消失、桌面左右栏对齐、手机顺序与无溢出通过。证据在仓库外 `/tmp/dsa-intro-browser-production.log`、`/tmp/dsa-intro-production-desktop.png`、`/tmp/dsa-intro-production-mobile.png`。
+- 仅展示调整，无数据操作；未重跑分析或删除报告。回滚可恢复部署 `dpl_FdwFYd9kjJ3EJ8a8sqd6uHhbyGcr`。中文专题无对应英文版本。

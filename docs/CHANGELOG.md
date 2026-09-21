@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] 移除首页重复的工作台标题与介绍文案，自选股和发起分析直接并排展示。
+
 - [修复] 将工作台标题收进左侧栏，消除右侧发起分析上方由通栏标题造成的留白。
 
 - [改进] 将页面刷新移至顶栏品牌右侧并收紧标题区留白。
