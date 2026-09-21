@@ -8,7 +8,7 @@ type TaskType = 'stock_analysis' | 'market_review' | 'composite_analysis';
 type MarketReviewRegion = 'cn' | 'hk' | 'us' | 'jp' | 'kr';
 type CompositeSummary = { outcome?: 'completed' | 'partial'; stock_completed?: number; stock_failed?: number; market_review_status?: 'completed' | 'failed'; failed_stocks?: string[] };
 type Task = { id: string; status: 'pending' | 'running' | 'succeeded' | 'failed'; task_type?: TaskType; input_json?: { stock_code?: string; region?: MarketReviewRegion; stock_codes?: string[] }; result_summary?: CompositeSummary | null; progress?: number; progress_message?: string | null; report_id?: string | null; error_code?: string | null; created_at?: string };
-type Props = { client: SupabaseClient; accessToken: string; user: string; onReport: () => void };
+type Props = { client: SupabaseClient; accessToken: string; user: string; onReport: () => void; reportRevision?: number };
 
 const terminal = (status: Task['status']) => status === 'succeeded' || status === 'failed';
 const humanError: Record<string, string> = {
@@ -21,7 +21,7 @@ const marketReviewRegions: Array<{ value: MarketReviewRegion; label: string }> =
   { value: 'jp', label: '日股' }, { value: 'kr', label: '韩股' },
 ];
 
-export function RunnerPanel({ client, accessToken, user, onReport }: Props) {
+export function RunnerPanel({ client, accessToken, user, onReport, reportRevision = 0 }: Props) {
   const [runner, setRunner] = useState<RunnerState>();
   const [taskType, setTaskType] = useState<TaskType>('stock_analysis');
   const [market, setMarket] = useState<Market>('CN');
@@ -31,6 +31,8 @@ export function RunnerPanel({ client, accessToken, user, onReport }: Props) {
   const [history, setHistory] = useState<Task[]>([]);
   const [error, setError] = useState('');
   const [historyError, setHistoryError] = useState('');
+  const [archivedReports, setArchivedReports] = useState<Set<string>>(new Set());
+  const [archiveError, setArchiveError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const mountedRef = useRef(false);
   const taskRef = useRef<Task | undefined>(undefined);
@@ -40,6 +42,7 @@ export function RunnerPanel({ client, accessToken, user, onReport }: Props) {
   const seenReports = useRef(new Set<string>());
   const historyLoaded = useRef(false);
   const historyRequest = useRef<Promise<Task[] | undefined> | undefined>(undefined);
+  const archiveRequest = useRef(0);
   const submitController = useRef<AbortController | undefined>(undefined);
   const onReportRef = useRef(onReport); onReportRef.current = onReport;
 
@@ -70,6 +73,20 @@ export function RunnerPanel({ client, accessToken, user, onReport }: Props) {
     void pending.then(() => { if (historyRequest.current === pending) historyRequest.current = undefined; });
     return pending;
   }, [client, user]);
+
+  const refreshArchivedReports = useCallback(async (tasks: Task[]) => {
+    const request = ++archiveRequest.current;
+    const reportIds = tasks.flatMap((item) => item.report_id ? [item.report_id] : []);
+    if (!reportIds.length) { if (mountedRef.current && request === archiveRequest.current) { setArchivedReports(new Set()); setArchiveError(''); } return; }
+    try {
+      const result = await client.from('analysis_tasks').select('id,deleted_at').eq('user_id', user).in('id', reportIds);
+      if (result.error) throw result.error;
+      const rows = (result.data ?? []) as Array<{ id: string; deleted_at: string | null }>;
+      if (mountedRef.current && request === archiveRequest.current) { setArchivedReports(new Set(rows.filter((row) => row.deleted_at).map((row) => row.id))); setArchiveError(''); }
+    } catch { if (mountedRef.current && request === archiveRequest.current) setArchiveError('回收站状态查询失败，报告可能已移入回收站。'); }
+  }, [client, user]);
+
+  useEffect(() => { if (history.length) void refreshArchivedReports(history); }, [history, refreshArchivedReports, reportRevision]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -194,20 +211,32 @@ export function RunnerPanel({ client, accessToken, user, onReport }: Props) {
     if (value.status === 'failed') return humanError[value.error_code || ''] || '失败';
     return value.task_type === 'composite_analysis' ? compositeStatusLabel(value) : '已完成';
   };
+  const lastSeen = () => {
+    if (runner?.busy) return '服务忙碌中';
+    if (!runner?.last_seen_at) return '等待服务心跳';
+    try { return `最近连接：${new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(runner.last_seen_at))}`; }
+    catch { return '最近连接时间暂不可用'; }
+  };
+  const isArchived = (value: Task) => Boolean(value.report_id && archivedReports.has(value.report_id));
+  const reportLink = (value: Task) => value.report_id ? <>{isArchived(value) ? <span className="cloud-muted">报告已移入回收站</span> : <Link to={`/reports/${value.report_id}`}>查看报告</Link>}</> : null;
+  const historyItems = history.filter((item) => item.id !== task?.id);
   return <section className="cloud-panel">
-    <div className="cloud-section-heading"><h2>本地分析服务</h2><span>{stateLabel}</span></div>
-    <p className="cloud-muted">{runner?.busy ? '服务忙碌中' : runner?.last_seen_at ? `最近心跳：${runner.last_seen_at}` : '等待服务心跳'}</p>
+    <div className="cloud-section-heading"><h2>发起分析</h2><span className={`cloud-runner-state is-${stateLabel === '在线' ? 'online' : stateLabel === '离线' ? 'offline' : 'unknown'}`}>{stateLabel}</span></div>
+    <p className="cloud-muted">{lastSeen()}</p>
     <form className="cloud-form" onSubmit={(event) => void submit(event)}>
-      <div className="cloud-fields">
-        <label htmlFor="runner-task-type">任务类型<select id="runner-task-type" aria-label="任务类型" disabled={controlDisabled} value={taskType} onChange={(event) => setTaskType(event.target.value as TaskType)}><option value="stock_analysis">个股分析</option><option value="market_review">大盘复盘</option><option value="composite_analysis">综合分析</option></select></label>
-        {taskType === 'market_review' || taskType === 'composite_analysis' ? <label htmlFor="runner-review-region">复盘市场<select id="runner-review-region" aria-label="复盘市场" disabled={controlDisabled} value={reviewRegion} onChange={(event) => setReviewRegion(event.target.value as MarketReviewRegion)}>{marketReviewRegions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label> : <><label htmlFor="runner-market">市场<select id="runner-market" aria-label="市场" disabled={controlDisabled} value={market} onChange={(event) => setMarket(event.target.value as Market)}><option value="CN">A 股</option><option value="HK">港股</option><option value="US">美股</option></select></label><label htmlFor="runner-code">代码<input aria-label="代码" id="runner-code" required disabled={controlDisabled} value={code} onChange={(event) => setCode(event.target.value)} placeholder="000001 / hk00700 / AAPL" /></label></>}
+      <div className="cloud-runner-tabs" role="tablist">
+        {(['stock_analysis', 'market_review', 'composite_analysis'] as TaskType[]).map((value) => <button key={value} type="button" role="tab" aria-selected={taskType === value} disabled={controlDisabled} onClick={() => setTaskType(value)}>{taskLabel(value)}</button>)}
+        <label className="cloud-visually-hidden" htmlFor="runner-task-type">任务类型<select id="runner-task-type" aria-label="任务类型" disabled={controlDisabled} value={taskType} onChange={(event) => setTaskType(event.target.value as TaskType)}><option value="stock_analysis">个股分析</option><option value="market_review">大盘复盘</option><option value="composite_analysis">综合分析</option></select></label>
       </div>
+      <div className="cloud-runner-submit-row"><div className="cloud-fields cloud-runner-fields">
+        {taskType === 'market_review' || taskType === 'composite_analysis' ? <label htmlFor="runner-review-region">复盘市场<select id="runner-review-region" aria-label="复盘市场" disabled={controlDisabled} value={reviewRegion} onChange={(event) => setReviewRegion(event.target.value as MarketReviewRegion)}>{marketReviewRegions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label> : <><label htmlFor="runner-market">市场<select id="runner-market" aria-label="市场" disabled={controlDisabled} value={market} onChange={(event) => setMarket(event.target.value as Market)}><option value="CN">A 股</option><option value="HK">港股</option><option value="US">美股</option></select></label><label htmlFor="runner-code">代码<input aria-label="代码" id="runner-code" required disabled={controlDisabled} value={code} onChange={(event) => setCode(event.target.value)} placeholder="000001 / hk00700 / AAPL" /></label></>}
+      </div><button className="btn-primary" disabled={submitting || !canSubmit}>{submitting ? '提交中…' : uncertain.current ? '重试提交' : '开始分析'}</button></div>
       {taskType === 'composite_analysis' && <p className="cloud-muted">提交后将使用云端自选股快照进行综合分析。</p>}
-      <button className="btn-primary" disabled={submitting || !canSubmit}>{submitting ? '提交中…' : uncertain.current ? '重试提交' : '开始分析'}</button>
     </form>
     {error && <p role="alert">{error}</p>}
     {historyError && <p role="alert">{historyError}</p>}
-    {task && <p role="status">{task.status === 'succeeded' ? <>{task.task_type === 'composite_analysis' ? compositeStatusLabel(task) : '已完成'}{compositeDetail(task) && <small> · {compositeDetail(task)}</small>} {task.report_id ? <Link to={`/reports/${task.report_id}`}>查看报告</Link> : '分析完成'}</> : task.status === 'failed' ? humanError[task.error_code || ''] || '分析失败，请重试。' : `${task.progress_message || '分析处理中…'}${typeof task.progress === 'number' ? ` ${task.progress}%` : ''}`}</p>}
-    <ul className="cloud-list">{history.map((item) => <li key={item.id}><span>{taskLabel(item.task_type)}{(item.task_type === 'market_review' || item.task_type === 'composite_analysis') && item.input_json?.region ? ` · ${regionLabel(item.input_json.region)}` : ''} <b>{renderTaskStatus(item)}</b>{compositeDetail(item) && <small> · {compositeDetail(item)}</small>}{!terminal(item.status) && item.progress_message && <small>{item.progress_message}</small>}</span>{item.report_id && <Link to={`/reports/${item.report_id}`}>查看报告</Link>}</li>)}</ul>
+    {archiveError && <p role="alert">{archiveError}</p>}
+    {task && <p role="status">{task.status === 'succeeded' ? <>{task.task_type === 'composite_analysis' ? compositeStatusLabel(task) : '已完成'}{compositeDetail(task) && <small> · {compositeDetail(task)}</small>} {reportLink(task) || '分析完成'}</> : task.status === 'failed' ? humanError[task.error_code || ''] || '分析失败，请重试。' : `${task.progress_message || '分析处理中…'}${typeof task.progress === 'number' ? ` ${task.progress}%` : ''}`}</p>}
+    {historyItems.length > 0 && <details className="cloud-task-history"><summary>近期执行记录（{historyItems.length}）</summary><ul className="cloud-list">{historyItems.map((item) => <li key={item.id}><span>{taskLabel(item.task_type)}{(item.task_type === 'market_review' || item.task_type === 'composite_analysis') && item.input_json?.region ? ` · ${regionLabel(item.input_json.region)}` : ''} <b>{renderTaskStatus(item)}</b>{compositeDetail(item) && <small> · {compositeDetail(item)}</small>}{!terminal(item.status) && item.progress_message && <small>{item.progress_message}</small>}</span>{reportLink(item)}</li>)}</ul></details>}
   </section>;
 }

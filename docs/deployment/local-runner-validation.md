@@ -121,3 +121,17 @@
 - 页面截图保存在仓库外 `/tmp/dsa-records-before-desktop.png`、`/tmp/dsa-records-local-desktop.png`、`/tmp/dsa-records-local-mobile.png`，不作为仓库文件提交。
 - 回滚本次 UI：将 Vercel 恢复到 `dpl_7BiSfxabpqYC7SXARVExz9awz9iP`；无数据库回滚步骤。
 - 远端验证：正式部署 `dpl_4b7tg9Y1WiTNhRegVXSe3zppXAur` 为 READY，已绑定 `https://stock.xinyilab.top`。上线后 A 账号真实浏览器登录、4 行唯一记录、每日定时来源与全部完成摘要、私有下载、手机页面宽度及无页面异常检查通过。证据为仓库外 `/tmp/dsa-records-browser-production.log`、`/tmp/dsa-records-production-desktop.png`、`/tmp/dsa-records-production-mobile.png`。本轮未重新执行分析引擎或制造生产失败任务，B 账号远端隔离沿用先前验收，相关权限策略未修改。
+
+## 2026-09-21 工作台改版与可恢复删除
+
+- 用户确认左右工作台布局；自选股添加／编辑与账户修改密码改为弹窗，分析类型页签化，执行历史折叠。分析记录合并状态、去掉时间副文案，个股直接显示保存时的股票名称（缺失时仅显示代码）。
+- 迁移 `202609210001_cloud_report_trash.sql` 已先在恢复项目、后在正式项目应用，新增 deleted_at 与本人操作 RPC，发布重试不会自动恢复回收站记录。迁移前后 tasks（排除新增空列）、reports、execution、runner、watchlist、member、engine history、Storage 对象记录摘要一致。摘要证据在仓库外 `/tmp/dsa-redesign-migration-DSA_RESTORE.json`、`/tmp/dsa-redesign-migration-DSA_SOURCE.json`。
+- 本地：完整 Web 1,236 项通过、2 项跳过；隔离副本中发布器、Runner、综合分析与迁移契约 45 项 Python 测试通过。覆盖统一状态、股票名称、删除取消／错误／恢复、末页删除纠正、账户与自选股弹窗等。
+- 恢复项目：事务回滚 SQL 测试覆盖本人／他人／匿名／停用用户、保存中与关联运行中任务、重复删除恢复及保留报告。实际 HTTP 校验匿名与 B 不能删除 A 的记录；浏览器验证真实 A 登录、股票名称、取消删除、移入回收站、恢复、账户及自选股弹窗、手机宽度和无页面异常。浏览器中的 Runner 离线响应为模拟，不作为引擎或执行 API 验收。
+- 恢复项目双连接并发：确认第二连接实际等待数据库行锁，分别验证删除先赢、发布开始先赢、Runner 完成发布后删除三种顺序，均符合预期且无死锁；晚到 complete/fail/cleanup 不清除删除标记，authenticated 直接 UPDATE 被拒绝。测试新建的并发记录与附件已精确清理，未删除既有历史。证据在 `/tmp/dsa-redesign-concurrency.log`。
+- 正式项目：A/B 原账号登录与私有附件边界通过；B 和匿名删除 A 报告请求均被拒绝。未对正式既有 4 份报告执行删除测试，未重新运行真实模型分析或修改密码。
+- 截图与浏览器日志存放仓库外 `/tmp/dsa-redesign-restore-desktop.png`、`/tmp/dsa-redesign-restore-mobile.png`、`/tmp/dsa-redesign-browser-restore.log`，不作为仓库文件提交。回收站保留本人深链和附件访问，不代表永久擦除，也不减少 Storage 用量。
+- 回滚前端至 `dpl_4b7tg9Y1WiTNhRegVXSe3zppXAur` 时保留数据库迁移和数据；旧版不理解删除标记，可能重新显示回收站记录。不要删除新增列、历史报告或附件来回滚。
+- 最后审查补充自选股保存错误在弹窗内展示、关闭编辑弹窗返回原编辑按钮的回归测试，最终云端相关 84 项通过；lint 无错误（既有 MobileChatPage Hook 警告 1 条），普通与云端构建均通过。完整 1,236 项结果为这两处修正前的全量回归，修正后未再重复整个非云端测试集。
+- 测试清理后重新核对恢复与正式项目全部上述数据摘要，均与迁移前一致；只清理本次新建的恢复测试样例。
+- 正式部署 `dpl_9v2fVbbvV3p6LZZXkZ5TrK3Z8Yvh` 已 READY 并绑定 `https://stock.xinyilab.top`。上线后真实浏览器验证 A 登录、保留 4 行记录、五列表格、无时间副文案、账户／自选股弹窗、私有下载、手机宽度和无页面异常。正式截图在仓库外 `/tmp/dsa-redesign-production-desktop.png`、`/tmp/dsa-redesign-production-mobile.png`，日志为 `/tmp/dsa-redesign-browser-production.log`。本轮未修改正式密码、未重新执行模型分析；删除恢复的成功路径在恢复项目完成。

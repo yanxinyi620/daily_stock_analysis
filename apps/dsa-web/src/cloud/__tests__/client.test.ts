@@ -28,7 +28,7 @@ test('records are paginated and owner-filtered, retaining failed tasks and joini
     const response = table === 'execution_tasks' ? execution : analysisCalls === 1 ? page : active;
     const builder = {} as Record<string, ReturnType<typeof vi.fn>>;
     builder.select = vi.fn((...args: unknown[]) => { calls.push({ table, method: 'select', args }); return builder; });
-    for (const method of ['eq', 'in', 'order']) builder[method] = vi.fn((...args: unknown[]) => { calls.push({ table, method, args }); return builder; });
+    for (const method of ['eq', 'in', 'order', 'is', 'not']) builder[method] = vi.fn((...args: unknown[]) => { calls.push({ table, method, args }); return builder; });
     builder.range = vi.fn((...args: unknown[]) => { calls.push({ table, method: 'range', args }); return response; });
     builder.then = vi.fn((resolve: (value: unknown) => unknown) => Promise.resolve(response).then(resolve));
     return builder;
@@ -37,16 +37,19 @@ test('records are paginated and owner-filtered, retaining failed tasks and joini
   expect(result).toMatchObject({ count: 4, active: true });
   expect(result.rows[0]).toMatchObject({ id: 'task-1', status: 'publish_failed', codes: ['600519'], report: page.data[0].analysis_reports[0], execution: execution.data[0] });
   expect(calls).toContainEqual({ table: 'analysis_tasks', method: 'range', args: [40, 59] });
+  expect(calls.filter((c) => c.table === 'analysis_tasks' && c.method === 'is')).toHaveLength(2);
+  expect(calls).toContainEqual({ table: 'analysis_tasks', method: 'is', args: ['deleted_at', null] });
+  expect(calls.find((c) => c.method === 'select')?.args[0]).toContain('stock_name:results->0->>name');
   expect(calls).toContainEqual({ table: 'analysis_tasks', method: 'eq', args: ['user_id', 'user-a'] });
   expect(calls).toContainEqual({ table: 'execution_tasks', method: 'eq', args: ['user_id', 'user-a'] });
   expect(calls.find((call) => call.table === 'analysis_tasks' && call.method === 'select')?.args[0]).toMatch(/codes:input_snapshot->codes/);
-  expect(calls.find((call) => call.table === 'analysis_tasks' && call.method === 'select')?.args[0]).not.toMatch(/markdown|results/);
+  expect(calls.find((call) => call.table === 'analysis_tasks' && call.method === 'select')?.args[0]).not.toMatch(/markdown|,results[,)]/);
 });
 test('records skips execution query for an empty page and rejects execution errors', async () => {
   const makeQuery = (response: unknown) => {
     const builder = {} as Record<string, ReturnType<typeof vi.fn>>;
     builder.select = vi.fn().mockReturnValue(builder);
-    for (const method of ['eq', 'in', 'order']) builder[method] = vi.fn().mockReturnValue(builder);
+    for (const method of ['eq', 'in', 'order', 'is', 'not']) builder[method] = vi.fn().mockReturnValue(builder);
     builder.range = vi.fn().mockReturnValue(response);
     builder.then = vi.fn((resolve: (value: unknown) => unknown) => Promise.resolve(response).then(resolve));
     return builder;
@@ -74,4 +77,20 @@ test('one client owns the session across repeated component renders', async () =
   const second = createCloudClient(env);
   expect(second).toBe(first);
   await first.auth.stopAutoRefresh();
+});
+
+test('trash requests exclude active count and restore uses authenticated RPC without client owner input', async () => {
+  const builder = { select: vi.fn(), eq: vi.fn(), not: vi.fn(), order: vi.fn(), range: vi.fn() };
+  for (const key of ['select', 'eq', 'not', 'order'] as const) builder[key].mockReturnValue(builder);
+  builder.range.mockResolvedValue({ data: [], error: null, count: 0 });
+  const from = vi.fn().mockReturnValue(builder);
+  const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
+  const api = cloudData({ from, rpc } as never);
+  expect(await api.records('owner', 0, 20, true)).toMatchObject({ rows: [], count: 0, active: false });
+  expect(from).toHaveBeenCalledTimes(1);
+  expect(builder.not).toHaveBeenCalledWith('deleted_at', 'is', null);
+  await api.setRecordDeleted('record', false);
+  expect(rpc).toHaveBeenCalledWith('cloud_set_report_deleted', { p_task_id: 'record', p_deleted: false });
+  rpc.mockResolvedValue({ data: null, error: new Error('private denial') });
+  await expect(api.setRecordDeleted('other', true)).rejects.toThrow(/请求失败/);
 });

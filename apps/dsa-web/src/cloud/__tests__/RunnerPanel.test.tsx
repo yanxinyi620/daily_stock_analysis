@@ -13,7 +13,9 @@ function database(rows: unknown[] = [], error: unknown = null) {
   const order = vi.fn().mockReturnValue({ limit });
   const eq = vi.fn().mockReturnValue({ order });
   const select = vi.fn().mockReturnValue({ eq });
-  return { client: { from: vi.fn(() => ({ select })) }, limit };
+  const archived = { in: vi.fn().mockResolvedValue({ data: [], error: null }) };
+  const archivedEq = vi.fn().mockReturnValue(archived);
+  return { client: { from: vi.fn((table: string) => table === 'analysis_tasks' ? { select: vi.fn(() => ({ eq: archivedEq })) } : { select }) }, limit };
 }
 
 function databaseSequence(results: Array<{ rows: unknown[]; error?: unknown }>) {
@@ -24,7 +26,9 @@ function databaseSequence(results: Array<{ rows: unknown[]; error?: unknown }>) 
   const order = vi.fn().mockReturnValue({ limit });
   const eq = vi.fn().mockReturnValue({ order });
   const select = vi.fn().mockReturnValue({ eq });
-  return { client: { from: vi.fn(() => ({ select })) }, limit };
+  const archived = { in: vi.fn().mockResolvedValue({ data: [], error: null }) };
+  const archivedEq = vi.fn().mockReturnValue(archived);
+  return { client: { from: vi.fn((table: string) => table === 'analysis_tasks' ? { select: vi.fn(() => ({ eq: archivedEq })) } : { select }) }, limit };
 }
 
 function renderPanel(client = database().client as never, onReport = vi.fn(), strict = false) {

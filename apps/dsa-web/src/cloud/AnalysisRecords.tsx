@@ -1,35 +1,60 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { AnalysisRecord, CloudData } from './client';
 import { useAnalysisRecords } from './useAnalysisRecords';
+import { CloudDialog } from './CloudDialog';
 
-const saveLabels = { publishing: '保存中', publish_failed: '保存失败', succeeded: '已保存', cancelled: '已取消' };
 function title(row: AnalysisRecord) {
+  const code = row.codes.length === 1 ? row.codes[0] : row.report?.stock_code;
+  if (code === 'COMPOSITE') return '综合分析';
+  if (code === 'MARKET') return '大盘复盘';
+  if (row.codes.length <= 1 && code) return row.report?.stock_name?.trim() || code;
   const value = row.report?.title || (row.codes.length ? row.codes.join('、') : '分析结果（尚无报告）');
   return value.replace(/\bCOMPOSITE\b/g, '综合分析').replace(/\bMARKET\b/g, '大盘复盘');
 }
-function outcome(row: AnalysisRecord) {
+function recordState(row: AnalysisRecord): { label: string; tone: string } {
+  if (row.status === 'publishing') return { label: '保存中', tone: 'publishing' };
+  if (row.status === 'publish_failed') return { label: '保存失败', tone: 'publish_failed' };
+  if (row.status === 'cancelled') return { label: '已取消', tone: 'cancelled' };
+  if (!row.report) return { label: '报告缺失', tone: 'publish_failed' };
   const task = row.execution;
-  if (!task) return '未记录';
-  if (task.status === 'failed') return '失败';
-  if (task.status !== 'succeeded') return '分析中';
-  if (task.task_type !== 'composite_analysis') return '已完成';
-  return task.result_summary?.outcome === 'completed' ? '全部完成'
-    : task.result_summary?.outcome === 'partial' ? '部分完成' : '未记录';
+  if (!task) return { label: '已保存', tone: 'cancelled' };
+  if (task.status !== 'succeeded') return { label: '结果待确认', tone: 'publishing' };
+  if (task.task_type !== 'composite_analysis' || task.result_summary?.outcome === 'completed') return { label: '已完成', tone: 'succeeded' };
+  if (task.result_summary?.outcome === 'partial') return { label: '部分完成', tone: 'publishing' };
+  return { label: '已保存', tone: 'cancelled' };
 }
 function source(row: AnalysisRecord) {
   return row.execution?.runner_id === 'github-actions-daily' ? '每日定时'
     : row.execution?.runner_id === 'local-primary' ? '网页分析' : '未记录';
 }
 
-export function AnalysisRecords({ api, user, revision, pageSize, formatDate }: {
-  api: CloudData; user: string; revision: number; pageSize: number; formatDate: (value: string) => string;
+export function AnalysisRecords({ api, user, revision, pageSize, formatDate, onChanged }: {
+  api: CloudData; user: string; revision: number; pageSize: number; formatDate: (value: string) => string; onChanged?: () => void;
 }) {
   const [page, setPage] = useState(0);
   const [retry, setRetry] = useState(0);
-  const { rows, count, loading, error } = useAnalysisRecords(api, user, page, pageSize, revision + retry);
+  const [trash, setTrash] = useState(false);
+  const { rows, count, loading, error } = useAnalysisRecords(api, user, page, pageSize, revision + retry, trash);
   const [downloading, setDownloading] = useState<string>();
   const [downloadError, setDownloadError] = useState('');
+  const [pendingDelete, setPendingDelete] = useState<AnalysisRecord>();
+  const [changing, setChanging] = useState(false);
+  const [changeError, setChangeError] = useState('');
+  const [message, setMessage] = useState('');
+  useEffect(() => {
+    if (!loading && !error && page > 0 && page * pageSize >= count) setPage(Math.max(0, Math.ceil(count / pageSize) - 1));
+  }, [count, page, pageSize, loading, error]);
+  const changeDeleted = async (id: string, deleted: boolean) => {
+    setChanging(true); setChangeError(''); setMessage('');
+    try {
+      await api.setRecordDeleted(id, deleted);
+      setPendingDelete(undefined);
+      setMessage(deleted ? '已移入回收站，可随时恢复。' : '已恢复到分析记录。');
+      setRetry((n) => n + 1); onChanged?.();
+    } catch { setChangeError('操作失败，请确认任务已结束，并检查网络及账户权限后重试。'); }
+    finally { setChanging(false); }
+  };
   const download = async (id: string) => {
     setDownloading(id); setDownloadError('');
     try {
@@ -42,28 +67,39 @@ export function AnalysisRecords({ api, user, revision, pageSize, formatDate }: {
     finally { setDownloading(undefined); }
   };
   return <section className="cloud-panel cloud-records">
-    <div className="cloud-section-heading"><div><h2>分析记录</h2><p className="cloud-muted cloud-records-caption">报告与保存进度，一处查看。</p></div><span>{count} 条记录</span></div>
+    <div className="cloud-section-heading"><div className="cloud-records-heading"><h2>{trash ? '回收站' : '分析记录'}</h2><span className="cloud-muted">{count} 条</span></div>
+      <button disabled={changing} onClick={() => { setTrash(!trash); setPage(0); setMessage(''); setChangeError(''); setDownloadError(''); }}>{trash ? '返回分析记录' : '回收站'}</button></div>
+    {trash && <p className="cloud-muted cloud-records-caption">删除的记录保留在这里，可随时恢复，不会自动清空。</p>}
     {error && <p role="alert">记录加载失败，请稍后重试。<button onClick={() => setRetry((n) => n + 1)}>重试</button></p>}
     {downloadError && <p role="alert">{downloadError}</p>}
+    {changeError && !pendingDelete && <p role="alert">{changeError}</p>}
+    {message && <p role="status">{message}</p>}
     {loading ? <p role="status">加载记录中…</p> : <div className="cloud-table-scroll" role="region" aria-label="分析记录表格" tabIndex={0}>
-      <table className="cloud-records-table" aria-label="分析记录">
-        <thead><tr><th scope="col">报告名称</th><th scope="col">来源</th><th scope="col">分析结果</th><th scope="col">保存状态</th><th scope="col">时间</th><th scope="col">操作</th></tr></thead>
+      <table className="cloud-records-table" aria-label={trash ? '回收站记录' : '分析记录'}>
+        <thead><tr><th scope="col">报告名称</th><th scope="col">来源</th><th scope="col">状态</th><th scope="col">时间</th><th scope="col">操作</th></tr></thead>
         <tbody>{rows.map((row) => {
-          const result = outcome(row);
+          const state = recordState(row);
+          const active = row.status === 'publishing' || row.execution?.status === 'pending' || row.execution?.status === 'running';
           return <tr key={row.id}>
             <td className="cloud-record-title">{row.report ? <Link to={`/reports/${row.id}`}>{title(row)}</Link> : <strong>{title(row)}</strong>}</td>
             <td>{source(row)}</td>
-            <td><span className={`cloud-record-outcome${result === '部分完成' || result === '失败' ? ' is-warning' : ''}`}>{result}</span></td>
-            <td><span className={`cloud-save-state is-${row.status}`}>{saveLabels[row.status]}</span></td>
-            <td><time dateTime={row.report?.generated_at || row.updated_at}>{formatDate(row.report?.generated_at || row.updated_at)}</time><small className="cloud-muted">{row.report ? '报告生成' : '状态更新'}</small></td>
-            <td>{row.report ? <div className="cloud-record-actions"><Link to={`/reports/${row.id}`}>查看</Link><button disabled={downloading !== undefined} aria-label={`下载 ${title(row)}`} onClick={() => void download(row.id)}>{downloading === row.id ? '下载中…' : '下载'}</button></div>
-              : <span className="cloud-muted">暂无报告</span>}</td>
+            <td><span className={`cloud-save-state is-${state.tone}`}>{state.label}</span></td>
+            <td><time dateTime={row.report?.generated_at || row.updated_at}>{formatDate(row.report?.generated_at || row.updated_at)}</time></td>
+            <td><div className="cloud-record-actions">{row.report ? <><Link to={`/reports/${row.id}`}>查看</Link><button disabled={downloading !== undefined} aria-label={`下载 ${title(row)}`} onClick={() => void download(row.id)}>{downloading === row.id ? '下载中…' : '下载'}</button></> : <span className="cloud-muted">暂无报告</span>}
+              {trash ? <button disabled={changing} aria-label={`恢复 ${title(row)}`} onClick={() => void changeDeleted(row.id, false)}>恢复</button>
+                : <button className="cloud-delete-action" disabled={changing || active} aria-label={`删除 ${title(row)}`} onClick={() => { setChangeError(''); setPendingDelete(row); }}>删除</button>}
+            </div></td>
           </tr>;
         })}</tbody>
       </table>
     </div>}
-    {!loading && !rows.length && !error && <p className="cloud-muted">暂无分析记录。分析结果开始保存后会出现在这里。</p>}
-    <p className="cloud-records-note cloud-muted">“已保存”表示报告已存入你的账号，不代表分析全部成功。旧记录缺少的信息显示为“未记录”。</p>
-    <div className="cloud-pagination"><button disabled={page === 0} onClick={() => setPage((n) => n - 1)}>上一页</button><span>第 {page + 1} 页</span><button disabled={(page + 1) * pageSize >= count} onClick={() => setPage((n) => n + 1)}>下一页</button></div>
+    {!loading && !rows.length && !error && <p className="cloud-muted">{trash ? '回收站为空。' : '暂无分析记录。分析结果开始保存后会出现在这里。'}</p>}
+    <div className="cloud-records-footer"><details className="cloud-records-note cloud-muted"><summary>状态说明</summary><p>“已完成”和“部分完成”均已保存报告。“已保存”用于缺少完整分析结果信息的历史记录。任务结束后才可删除。</p></details>
+      <div className="cloud-pagination"><button disabled={page === 0 || changing} onClick={() => setPage((n) => n - 1)}>上一页</button><span>第 {page + 1} 页</span><button disabled={(page + 1) * pageSize >= count || changing} onClick={() => setPage((n) => n + 1)}>下一页</button></div></div>
+    {pendingDelete && <CloudDialog title="移入回收站？" onClose={() => { setPendingDelete(undefined); setChangeError(''); }} busy={changing}>
+      <p>“{title(pendingDelete)}”将从分析列表移除，可在回收站恢复。报告与附件不会永久删除。</p>
+      {changeError && <p role="alert">{changeError}</p>}
+      <div className="cloud-actions"><button disabled={changing} onClick={() => setPendingDelete(undefined)}>取消</button><button className="btn-primary" disabled={changing} onClick={() => void changeDeleted(pendingDelete.id, true)}>{changing ? '处理中…' : '移入回收站'}</button></div>
+    </CloudDialog>}
   </section>;
 }

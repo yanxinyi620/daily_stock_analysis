@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { BrowserRouter, Link, Route, Routes, useParams } from 'react-router-dom';
 import { ReportMarkdownBody } from '../components/report/ReportMarkdownBody';
 import { cloudData, createCloudClient, type CloudData, type CloudReport, type Market, type WatchItem } from './client';
 import { AnalysisRecords } from './AnalysisRecords';
 import { RunnerPanel } from './RunnerPanel';
+import { CloudDialog } from './CloudDialog';
 import './cloud.css';
 
 const pageSize = Math.max(1, Math.min(100, Number(import.meta.env.VITE_CLOUD_REPORT_PAGE_SIZE) || 20));
@@ -46,6 +47,8 @@ function Watchlist({ api, user }: { api: CloudData; user: string }) {
   const [market, setMarket] = useState<Market>('CN'); const [code, setCode] = useState('');
   const [name, setName] = useState(''); const [position, setPosition] = useState(0);
   const [editing, setEditing] = useState<string>(); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+  const close = () => { setOpen(false); setEditing(undefined); setCode(''); setName(''); };
   useEffect(() => {
     let current = true;
     api.watchlist(user).then((rows) => { if (current) setItems(rows); }).catch(() => { if (current) setError(requestError); });
@@ -55,7 +58,7 @@ function Watchlist({ api, user }: { api: CloudData; user: string }) {
     event.preventDefault(); setBusy(true); setError('');
     try {
       await api.saveWatch(user, { market, code, name, position }, editing);
-      setCode(''); setName(''); setEditing(undefined); setRevision((n) => n + 1);
+      setCode(''); setName(''); setEditing(undefined); setOpen(false); setRevision((n) => n + 1);
     } catch { setError('保存失败，请核对代码格式、重复记录及账户权限。'); }
     finally { setBusy(false); }
   };
@@ -65,26 +68,31 @@ function Watchlist({ api, user }: { api: CloudData; user: string }) {
     catch { setError(requestError); }
     finally { setBusy(false); }
   };
-  return <section className="cloud-panel">
+  const edit = (item: WatchItem) => {
+    setEditing(item.id); setMarket(item.market); setCode(item.code); setName(item.name); setPosition(item.position); setError(''); setOpen(true);
+  };
+  const beginAdd = () => { setEditing(undefined); setMarket('CN'); setCode(''); setName(''); setPosition(0); setError(''); setOpen(true); };
+  return <aside className="cloud-watchlist">
     <div className="cloud-section-heading"><h2>我的自选股</h2><span>{items.length} 只</span></div>
     <ul className="cloud-list">{items.map((item) => <li key={item.id}>
-      <span><strong>{item.code}</strong><small>{item.name || item.market}</small></span>
-      <div className="cloud-actions"><button disabled={busy} onClick={() => {
-        setEditing(item.id); setMarket(item.market); setCode(item.code); setName(item.name); setPosition(item.position);
-      }} aria-label={`编辑 ${item.code}`}>编辑</button><button disabled={busy} onClick={() => void remove(item.id)} aria-label={`移除 ${item.code}`}>移除</button></div>
+      <span><strong>{item.name || item.code}</strong><small>{item.name ? `${item.code} · ${item.market}` : item.market}</small></span>
+      <div className="cloud-actions"><button disabled={busy} onClick={() => edit(item)} aria-label={`编辑 ${item.code}`}>编辑</button><button disabled={busy} onClick={() => void remove(item.id)} aria-label={`移除 ${item.code}`}>移除</button></div>
     </li>)}</ul>
     {!items.length && <p className="cloud-muted">添加你正在关注的股票。</p>}
-    <form className="cloud-form" onSubmit={(e) => void save(e)}>
+    <button type="button" className="cloud-watchlist-add" disabled={busy} onClick={beginAdd}>添加自选股</button>
+    <p className="cloud-watchlist-note">综合分析使用提交时的自选股快照。</p>
+    {open && <CloudDialog title={editing ? '编辑自选股' : '添加自选股'} onClose={close} busy={busy}><form className="cloud-form" onSubmit={(e) => void save(e)}>
       <div className="cloud-fields"><label>市场<select value={market} onChange={(e) => setMarket(e.target.value as Market)}>
         <option value="CN">A 股</option><option value="HK">港股</option><option value="US">美股</option>
       </select></label><label>代码<input required value={code} onChange={(e) => setCode(e.target.value)} placeholder="000001 / hk00700 / AAPL" /></label></div>
       <div className="cloud-fields"><label>名称<input maxLength={100} value={name} onChange={(e) => setName(e.target.value)} /></label>
         <label>排序<input type="number" step="1" value={position} onChange={(e) => setPosition(Number(e.target.value))} /></label></div>
       <div className="cloud-actions"><button className="btn-primary" disabled={busy}>{editing ? '保存修改' : '添加自选股'}</button>
-        {editing && <button type="button" onClick={() => { setEditing(undefined); setCode(''); setName(''); }}>取消编辑</button>}</div>
-    </form>
-    {error && <p role="alert">{error} <button onClick={() => setRevision((n) => n + 1)}>重试</button></p>}
-  </section>;
+        <button type="button" disabled={busy} onClick={close}>取消</button></div>
+      {error && <p role="alert">{error}</p>}
+    </form></CloudDialog>}
+    {error && !open && <p role="alert">{error} <button onClick={() => setRevision((n) => n + 1)}>重试</button></p>}
+  </aside>;
 }
 
 function ReportDetail({ api, user }: { api: CloudData; user: string }) {
@@ -116,29 +124,30 @@ function ReportDetail({ api, user }: { api: CloudData; user: string }) {
 
 function Account({ client }: { client: SupabaseClient }) {
   const [password, setPassword] = useState(''); const [message, setMessage] = useState(''); const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false); const triggerRef = useRef<HTMLButtonElement>(null);
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setMessage('');
     try { const { error } = await client.auth.updateUser({ password }); setMessage(error ? '修改失败，请重新登录后重试。' : '密码已更新。'); setPassword(''); }
     catch { setMessage(requestError); } finally { setBusy(false); }
   };
-  return <details className="cloud-panel"><summary>账户 · 修改密码</summary><form className="cloud-form" onSubmit={(e) => void submit(e)}>
+  const close = () => { setOpen(false); window.setTimeout(() => triggerRef.current?.focus()); };
+  return <><button ref={triggerRef} type="button" onClick={() => setOpen(true)}>账户</button>{open && <CloudDialog title="修改密码" onClose={close} busy={busy}><form className="cloud-form" onSubmit={(e) => void submit(e)}>
     <label>新密码<input type="password" autoComplete="new-password" minLength={12} required value={password} onChange={(e) => setPassword(e.target.value)} /></label>
     <button disabled={busy}>更新密码</button>{message && <p role="status">{message}</p>}
-  </form></details>;
+  </form></CloudDialog>}</>;
 }
 
 function Workspace({ client, session, api, logout }: { client: SupabaseClient; session: Session; api: CloudData; logout: () => void }) {
   const [revision, setRevision] = useState(0);
   return <BrowserRouter><div className="cloud-workspace">
     <header className="cloud-header"><Link to="/" className="cloud-brand">DSA <span>研究档案</span></Link>
-      <div className="cloud-actions"><span className="cloud-muted">{session.user.email}</span><button onClick={logout}>退出登录</button></div></header>
+      <div className="cloud-actions"><span className="cloud-muted">{session.user.email}</span><Account client={client} /><button onClick={logout}>退出登录</button></div></header>
     <Routes><Route path="/reports/:id" element={<ReportDetailRoute api={api} user={session.user.id} />} />
-      <Route path="/" element={<><div className="cloud-intro"><div><div className="cloud-eyebrow">YOUR RESEARCH LIBRARY</div><h1>每一次分析，都有记录。</h1><p className="cloud-muted">仅你可见的自选股、报告与保存状态。</p></div>
+      <Route path="/" element={<><div className="cloud-intro"><div><h1>分析工作台</h1><p className="cloud-muted">发起分析，回看每一次判断。</p></div>
         <button onClick={() => setRevision((n) => n + 1)}>刷新</button></div>
-        <div className="cloud-grid"><Watchlist api={api} user={session.user.id} /><div className="cloud-stack">
-          <RunnerPanel client={client} accessToken={session.access_token} user={session.user.id} onReport={() => setRevision((n) => n + 1)} />
-          <Account client={client} /></div>
-          <AnalysisRecords api={api} user={session.user.id} revision={revision} pageSize={pageSize} formatDate={date} /></div></>} />
+        <div className="cloud-grid"><Watchlist api={api} user={session.user.id} /><main className="cloud-stack">
+          <RunnerPanel client={client} accessToken={session.access_token} user={session.user.id} onReport={() => setRevision((n) => n + 1)} reportRevision={revision} />
+          <AnalysisRecords api={api} user={session.user.id} revision={revision} pageSize={pageSize} formatDate={date} onChanged={() => setRevision((n) => n + 1)} /></main></div></>} />
       <Route path="*" element={<main className="cloud-panel">页面不存在。<Link to="/">返回报告列表</Link></main>} /></Routes>
     <footer className="cloud-muted">分析仅供研究参考 · 时间显示：{displayZone}</footer>
   </div></BrowserRouter>;

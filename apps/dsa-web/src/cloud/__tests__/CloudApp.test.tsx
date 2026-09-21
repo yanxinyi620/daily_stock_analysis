@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
 import CloudApp from '../CloudApp';
 import { cloudData, createCloudClient } from '../client';
@@ -65,7 +65,7 @@ test('a late previous-user response cannot leak into a new session', async () =>
     rows: [{ id: 'report-b', status: 'succeeded', updated_at: '2026-09-14T00:00:00Z', codes: [], execution: null, report: { task_id: 'report-b', title: '私人报告 B', generated_at: '2026-09-14T00:00:00Z' } }], count: 1, active: false,
   }));
   render(<CloudApp />);
-  await waitFor(() => expect(data.records).toHaveBeenCalledWith('user-a', 0, 20));
+  await waitFor(() => expect(data.records).toHaveBeenCalledWith('user-a', 0, 20, false));
   act(() => listener('SIGNED_IN', { user: { id: 'user-b', email: 'b@example.test' }, access_token: 'token-b' }));
   await screen.findByText('私人报告 B');
   await act(async () => finishA({ rows: [{ id: 'report-a', status: 'succeeded', updated_at: '2026-09-14T00:00:00Z', codes: [], execution: null, report: { task_id: 'report-a', title: '私人报告 A', generated_at: '2026-09-14T00:00:00Z' } }], count: 1, active: false }));
@@ -83,4 +83,50 @@ test('one records table replaces the duplicate publishing section without invent
   expect(screen.queryByText('已发布')).not.toBeInTheDocument();
   expect(screen.getByText('已保存')).toBeInTheDocument();
   expect(screen.queryByText('全部完成')).not.toBeInTheDocument();
+});
+
+test('opens account password controls in a dialog and returns focus when it closes', async () => {
+  auth.getSession.mockResolvedValue({ data: { session }, error: null });
+  render(<CloudApp />);
+  const account = await screen.findByRole('button', { name: '账户' });
+  fireEvent.click(account);
+  expect(screen.getByRole('dialog', { name: '修改密码' })).toBeInTheDocument();
+  const close = screen.getByRole('button', { name: '关闭' });
+  fireEvent.click(close);
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '修改密码' })).not.toBeInTheDocument());
+  expect(account).toHaveFocus();
+});
+
+test('opens the complete watchlist form in a dialog', async () => {
+  auth.getSession.mockResolvedValue({ data: { session }, error: null });
+  render(<CloudApp />);
+  fireEvent.click(await screen.findByRole('button', { name: '添加自选股' }));
+  const dialog = screen.getByRole('dialog', { name: '添加自选股' });
+  expect(dialog).toHaveTextContent('市场');
+  expect(dialog).toHaveTextContent('代码');
+  expect(dialog).toHaveTextContent('名称');
+  expect(dialog).toHaveTextContent('排序');
+});
+
+test('failed watchlist saves show the error inside the open dialog', async () => {
+  auth.getSession.mockResolvedValue({ data: { session }, error: null });
+  data.saveWatch.mockRejectedValue(new Error('private server message'));
+  render(<CloudApp />);
+  fireEvent.click(await screen.findByRole('button', { name: '添加自选股' }));
+  const dialog = screen.getByRole('dialog');
+  fireEvent.change(within(dialog).getByLabelText('代码'), { target: { value: '000001' } });
+  fireEvent.click(within(dialog).getByRole('button', { name: '添加自选股' }));
+  expect(await within(dialog).findByRole('alert')).toHaveTextContent('保存失败');
+  expect(within(dialog).getByLabelText('代码')).toHaveValue('000001');
+});
+
+test('closing an edit dialog returns focus to that stocks edit button', async () => {
+  auth.getSession.mockResolvedValue({ data: { session }, error: null });
+  data.watchlist.mockResolvedValue([{ id: 'watch-a', market: 'CN', code: '000001', name: '平安银行', position: 0 }]);
+  render(<CloudApp />);
+  const edit = await screen.findByRole('button', { name: '编辑 000001' });
+  edit.focus(); fireEvent.click(edit);
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '取消' }));
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+  expect(edit).toHaveFocus();
 });
