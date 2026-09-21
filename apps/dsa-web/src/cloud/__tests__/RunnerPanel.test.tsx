@@ -193,13 +193,14 @@ test('an ambiguous submission remains retryable when the next status says the ru
   await waitFor(() => expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(2));
 });
 
-test('a status API failure still renders existing history', async () => {
+test('completed history is not repeated in the analysis controls', async () => {
   const db = database([{ ...task, status: 'succeeded', report_id: 'existing-report' }]);
-  vi.spyOn(globalThis, 'fetch').mockResolvedValue(json({ error: 'unavailable' }, { status: 503 }));
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(json({ online: false, busy: false, last_seen_at: '2026-09-20T10:31:00Z', current_task_id: null }));
   renderPanel(db.client as never);
-  expect(await screen.findByText('已完成')).toBeInTheDocument();
-  expect(screen.queryByText('正在分析')).not.toBeInTheDocument();
-  expect(screen.getByRole('link', { name: '查看报告' })).toHaveAttribute('href', '/reports/existing-report');
+  await screen.findByText(/最近连接：/);
+  await waitFor(() => expect(db.limit).toHaveBeenCalled());
+  expect(screen.queryByText(/近期执行记录/)).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: '查看报告' })).not.toBeInTheDocument();
 });
 
 test('a failed history request retries and recovers on the next status poll', async () => {
@@ -240,7 +241,7 @@ test('submits a composite analysis with only the selected market region', async 
   const payload = JSON.parse(String(post?.[1]?.body));
   expect(payload).toMatchObject({ request_id: 'req-1', task_type: 'composite_analysis', input: { region: 'hk' } });
   expect(payload.input).not.toHaveProperty('stock_codes');
-  expect(screen.getByText('提交后将使用云端自选股快照进行综合分析。')).toBeInTheDocument();
+  expect(screen.queryByText('提交后将使用云端自选股快照进行综合分析。')).not.toBeInTheDocument();
 });
 
 test.each([
@@ -263,9 +264,13 @@ test('renders a published partial composite as partial with failure counts and r
     input_json: { region: 'cn', stock_codes: ['600519', '000858', 'AAPL'] },
     result_summary: { outcome: 'partial', stock_completed: 2, stock_failed: 1, market_review_status: 'failed', failed_stocks: ['000858'] },
   };
-  const db = database([composite]);
-  vi.spyOn(globalThis, 'fetch').mockResolvedValue(json({ online: true, busy: false, last_seen_at: null, current_task_id: null }));
-  renderPanel(db.client as never);
+  vi.spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(json({ online: true, busy: false, last_seen_at: null, current_task_id: null }))
+    .mockResolvedValueOnce(json(composite));
+  renderPanel();
+  await screen.findByText('在线');
+  fireEvent.click(screen.getByRole('tab', { name: '综合分析' }));
+  fireEvent.click(screen.getByRole('button', { name: '开始分析' }));
   expect(await screen.findByText('部分完成')).toBeInTheDocument();
   expect(screen.getByText(/失败 1 支/)).toBeInTheDocument();
   expect(screen.getByText(/成功 2 支/)).toBeInTheDocument();
@@ -294,15 +299,19 @@ test('renders a partial composite returned by submission with its published repo
   expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
 });
 
-test('renders a completed composite history as fully completed', async () => {
+test('renders a newly completed composite as fully completed', async () => {
   const composite = {
     ...task, status: 'succeeded', task_type: 'composite_analysis', report_id: 'report-composite',
     input_json: { region: 'us', stock_codes: ['AAPL'] },
     result_summary: { outcome: 'completed', stock_completed: 1, stock_failed: 0, market_review_status: 'completed', failed_stocks: [] },
   };
-  const db = database([composite]);
-  vi.spyOn(globalThis, 'fetch').mockResolvedValue(json({ online: true, busy: false, last_seen_at: null, current_task_id: null }));
-  renderPanel(db.client as never);
+  vi.spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(json({ online: true, busy: false, last_seen_at: null, current_task_id: null }))
+    .mockResolvedValueOnce(json(composite));
+  renderPanel();
+  await screen.findByText('在线');
+  fireEvent.click(screen.getByRole('tab', { name: '综合分析' }));
+  fireEvent.click(screen.getByRole('button', { name: '开始分析' }));
   expect(await screen.findByText('已完成')).toBeInTheDocument();
   expect(screen.queryByText('部分完成')).not.toBeInTheDocument();
   expect(screen.getByText(/失败 0 支/)).toBeInTheDocument();
@@ -314,9 +323,13 @@ test('does not claim completion when a succeeded composite has no trustworthy su
     ...task, status: 'succeeded', task_type: 'composite_analysis', report_id: 'report-unknown',
     input_json: { region: 'cn', stock_codes: ['600519'] }, result_summary: null,
   };
-  const db = database([composite]);
-  vi.spyOn(globalThis, 'fetch').mockResolvedValue(json({ online: true, busy: false, last_seen_at: null, current_task_id: null }));
-  renderPanel(db.client as never);
+  vi.spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(json({ online: true, busy: false, last_seen_at: null, current_task_id: null }))
+    .mockResolvedValueOnce(json(composite));
+  renderPanel();
+  await screen.findByText('在线');
+  fireEvent.click(screen.getByRole('tab', { name: '综合分析' }));
+  fireEvent.click(screen.getByRole('button', { name: '开始分析' }));
   expect(await screen.findByText('结果待确认')).toBeInTheDocument();
   expect(screen.queryByText('已完成')).not.toBeInTheDocument();
   expect(screen.queryByText('部分完成')).not.toBeInTheDocument();

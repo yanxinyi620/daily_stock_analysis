@@ -28,7 +28,6 @@ export function RunnerPanel({ client, accessToken, user, onReport, reportRevisio
   const [reviewRegion, setReviewRegion] = useState<MarketReviewRegion>('cn');
   const [code, setCode] = useState('');
   const [task, setTask] = useState<Task>();
-  const [history, setHistory] = useState<Task[]>([]);
   const [error, setError] = useState('');
   const [historyError, setHistoryError] = useState('');
   const [archivedReports, setArchivedReports] = useState<Set<string>>(new Set());
@@ -62,7 +61,7 @@ export function RunnerPanel({ client, accessToken, user, onReport, reportRevisio
         const result = await client.from('execution_tasks').select('id,status,task_type,progress,progress_message,report_id,error_code,created_at,input_json,result_summary').eq('user_id', user).order('created_at', { ascending: false }).limit(20);
         if (result.error) throw result.error;
         const rows = (result.data ?? []) as Task[];
-        if (mountedRef.current) { setHistory(rows); setHistoryError(''); }
+        if (mountedRef.current) setHistoryError('');
         return rows;
       } catch {
         if (mountedRef.current) setHistoryError('任务状态查询失败，稍后重试。');
@@ -86,7 +85,7 @@ export function RunnerPanel({ client, accessToken, user, onReport, reportRevisio
     } catch { if (mountedRef.current && request === archiveRequest.current) setArchiveError('回收站状态查询失败，报告可能已移入回收站。'); }
   }, [client, user]);
 
-  useEffect(() => { if (history.length) void refreshArchivedReports(history); }, [history, refreshArchivedReports, reportRevision]);
+  useEffect(() => { void refreshArchivedReports(task ? [task] : []); }, [task, refreshArchivedReports, reportRevision]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -189,7 +188,6 @@ export function RunnerPanel({ client, accessToken, user, onReport, reportRevisio
   const stateLabel = runner === undefined ? '状态未知' : runner.online ? '在线' : '离线';
   const controlDisabled = submitting || uncertain.current;
   const taskLabel = (value?: TaskType) => value === 'market_review' ? '大盘复盘' : value === 'composite_analysis' ? '综合分析' : '个股分析';
-  const regionLabel = (value?: MarketReviewRegion) => marketReviewRegions.find((item) => item.value === value)?.label ?? value ?? '';
   const compositeOutcome = (value?: Task) => value?.task_type === 'composite_analysis' ? value.result_summary?.outcome : undefined;
   const compositeDetail = (value?: Task) => {
     if (value?.task_type !== 'composite_analysis' || !value.result_summary) return null;
@@ -206,11 +204,6 @@ export function RunnerPanel({ client, accessToken, user, onReport, reportRevisio
     if (compositeOutcome(value) === 'completed') return '已完成';
     return '结果待确认';
   };
-  const renderTaskStatus = (value: Task) => {
-    if (!terminal(value.status)) return value.status === 'pending' ? '排队中' : '分析中';
-    if (value.status === 'failed') return humanError[value.error_code || ''] || '失败';
-    return value.task_type === 'composite_analysis' ? compositeStatusLabel(value) : '已完成';
-  };
   const lastSeen = () => {
     if (runner?.busy) return '服务忙碌中';
     if (!runner?.last_seen_at) return '等待服务心跳';
@@ -219,10 +212,9 @@ export function RunnerPanel({ client, accessToken, user, onReport, reportRevisio
   };
   const isArchived = (value: Task) => Boolean(value.report_id && archivedReports.has(value.report_id));
   const reportLink = (value: Task) => value.report_id ? <>{isArchived(value) ? <span className="cloud-muted">报告已移入回收站</span> : <Link to={`/reports/${value.report_id}`}>查看报告</Link>}</> : null;
-  const historyItems = history.filter((item) => item.id !== task?.id);
   return <section className="cloud-panel">
     <div className="cloud-section-heading"><h2>发起分析</h2><span className={`cloud-runner-state is-${stateLabel === '在线' ? 'online' : stateLabel === '离线' ? 'offline' : 'unknown'}`}>{stateLabel}</span></div>
-    <p className="cloud-muted">{lastSeen()}</p>
+    <p className="cloud-muted cloud-runner-connection">{lastSeen()}</p>
     <form className="cloud-form" onSubmit={(event) => void submit(event)}>
       <div className="cloud-runner-tabs" role="tablist">
         {(['stock_analysis', 'market_review', 'composite_analysis'] as TaskType[]).map((value) => <button key={value} type="button" role="tab" aria-selected={taskType === value} disabled={controlDisabled} onClick={() => setTaskType(value)}>{taskLabel(value)}</button>)}
@@ -231,12 +223,10 @@ export function RunnerPanel({ client, accessToken, user, onReport, reportRevisio
       <div className="cloud-runner-submit-row"><div className="cloud-fields cloud-runner-fields">
         {taskType === 'market_review' || taskType === 'composite_analysis' ? <label htmlFor="runner-review-region">复盘市场<select id="runner-review-region" aria-label="复盘市场" disabled={controlDisabled} value={reviewRegion} onChange={(event) => setReviewRegion(event.target.value as MarketReviewRegion)}>{marketReviewRegions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label> : <><label htmlFor="runner-market">市场<select id="runner-market" aria-label="市场" disabled={controlDisabled} value={market} onChange={(event) => setMarket(event.target.value as Market)}><option value="CN">A 股</option><option value="HK">港股</option><option value="US">美股</option></select></label><label htmlFor="runner-code">代码<input aria-label="代码" id="runner-code" required disabled={controlDisabled} value={code} onChange={(event) => setCode(event.target.value)} placeholder="000001 / hk00700 / AAPL" /></label></>}
       </div><button className="btn-primary" disabled={submitting || !canSubmit}>{submitting ? '提交中…' : uncertain.current ? '重试提交' : '开始分析'}</button></div>
-      {taskType === 'composite_analysis' && <p className="cloud-muted">提交后将使用云端自选股快照进行综合分析。</p>}
     </form>
     {error && <p role="alert">{error}</p>}
     {historyError && <p role="alert">{historyError}</p>}
     {archiveError && <p role="alert">{archiveError}</p>}
     {task && <p role="status">{task.status === 'succeeded' ? <>{task.task_type === 'composite_analysis' ? compositeStatusLabel(task) : '已完成'}{compositeDetail(task) && <small> · {compositeDetail(task)}</small>} {reportLink(task) || '分析完成'}</> : task.status === 'failed' ? humanError[task.error_code || ''] || '分析失败，请重试。' : `${task.progress_message || '分析处理中…'}${typeof task.progress === 'number' ? ` ${task.progress}%` : ''}`}</p>}
-    {historyItems.length > 0 && <details className="cloud-task-history"><summary>近期执行记录（{historyItems.length}）</summary><ul className="cloud-list">{historyItems.map((item) => <li key={item.id}><span>{taskLabel(item.task_type)}{(item.task_type === 'market_review' || item.task_type === 'composite_analysis') && item.input_json?.region ? ` · ${regionLabel(item.input_json.region)}` : ''} <b>{renderTaskStatus(item)}</b>{compositeDetail(item) && <small> · {compositeDetail(item)}</small>}{!terminal(item.status) && item.progress_message && <small>{item.progress_message}</small>}</span>{reportLink(item)}</li>)}</ul></details>}
   </section>;
 }

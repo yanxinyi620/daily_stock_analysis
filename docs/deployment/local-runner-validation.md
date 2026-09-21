@@ -135,3 +135,10 @@
 - 最后审查补充自选股保存错误在弹窗内展示、关闭编辑弹窗返回原编辑按钮的回归测试，最终云端相关 84 项通过；lint 无错误（既有 MobileChatPage Hook 警告 1 条），普通与云端构建均通过。完整 1,236 项结果为这两处修正前的全量回归，修正后未再重复整个非云端测试集。
 - 测试清理后重新核对恢复与正式项目全部上述数据摘要，均与迁移前一致；只清理本次新建的恢复测试样例。
 - 正式部署 `dpl_9v2fVbbvV3p6LZZXkZ5TrK3Z8Yvh` 已 READY 并绑定 `https://stock.xinyilab.top`。上线后真实浏览器验证 A 登录、保留 4 行记录、五列表格、无时间副文案、账户／自选股弹窗、私有下载、手机宽度和无页面异常。正式截图在仓库外 `/tmp/dsa-redesign-production-desktop.png`、`/tmp/dsa-redesign-production-mobile.png`，日志为 `/tmp/dsa-redesign-browser-production.log`。本轮未修改正式密码、未重新执行模型分析；删除恢复的成功路径在恢复项目完成。
+
+## 2026-09-21 发起分析区域精简
+
+- 最近连接字号缩至 0.75rem；移除近期执行记录列表及综合分析提交前的快照提示。当前任务进度、结果、错误反馈与服务端快照行为保留，历史数据不变。内部仍查询执行记录以恢复进行中的任务，仅查询当前任务的回收站标记。
+- 本地验证：云端相关 84 项测试通过，lint 无错误（既有 MobileChatPage Hook 警告 1 条），普通和云端构建通过。既有综合分析结果测试改为覆盖当前提交返回的结果，并验证历史列表与提示不再渲染。
+- 无数据库、Storage、环境变量或引擎变更；本轮不重新执行真实分析。回滚至前版 Vercel 部署 `dpl_9v2fVbbvV3p6LZZXkZ5TrK3Z8Yvh` 即可恢复原展示，无需回滚数据。此中文专题无对应英文文档。
+- 正式部署 `dpl_CYEMbdSn2i9U3WnhgkKCPi4aLrqf` 已 READY 并绑定 `https://stock.xinyilab.top`。真实 A 账号浏览器验证最近连接为 12px、近期执行记录与综合分析快照提示均不再显示、复盘市场控件与 4 份报告保留、手机无整页横向溢出；未提交分析任务。截图位于仓库外 `/tmp/dsa-panel-production-desktop.png`、`/tmp/dsa-panel-production-mobile.png`，日志 `/tmp/dsa-panel-browser.log`。

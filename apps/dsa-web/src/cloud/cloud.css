@@ -246,6 +246,10 @@
   color: #aab5c5;
   background: #8090a31d;
 }
+.cloud-runner-connection {
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
 .cloud-runner-tabs {
   display: flex;
   gap: 4px;
@@ -274,19 +278,10 @@
   display: grid;
   grid-template-columns: 145px minmax(0, 1fr);
 }
-.cloud-task-history {
-  margin-top: 16px;
-  border-top: 1px solid #8090a323;
-  padding-top: 12px;
-}
-.cloud-task-history summary,
 .cloud-records-note summary {
   cursor: pointer;
   color: #9aa7b8;
   font-size: 0.8rem;
-}
-.cloud-task-history .cloud-list {
-  margin-top: 8px;
 }
 .cloud-visually-hidden {
   position: absolute !important;
