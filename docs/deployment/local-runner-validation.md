@@ -154,3 +154,10 @@
 - 回滚可将前端恢复至 `dpl_CYEMbdSn2i9U3WnhgkKCPi4aLrqf`，保留增量数据库结构和数据。旧前端可能展示已删除发布墓碑，但不能恢复已清理正文或附件；回滚部署不能撤销永久删除。中文专题无对应英文版本，未修改 README。
 
 - 正式 Vercel 部署 `dpl_HdDZX2Ux3dhDrrAUMvk1h9wY7m83` 已绑定 `https://stock.xinyilab.top`；远端构建通过，DELETE 路由真实校验匿名 401、B 操作 A 403、A 未入回收站 409。浏览器刷新后登录保留，记录数按本人数据库查询核对：A 为 3 条正常、1 条回收站（并非 4 条都在正常列表）。正式页面的永久删除确认框只取消，不提交删除。验收日志 `/tmp/dsa-purge-production.log`，截图 `/tmp/dsa-purge-production-desktop.png` 与 `/tmp/dsa-purge-production-mobile.png`。
+
+## 2026-09-21 修正右侧面板上方留白
+
+- 根因是工作台标题仍为通栏区域；将标题与说明收进左侧栏，右侧面板距顶栏 20px，和左侧标题顶部对齐。手机端保持标题、自选股、发起分析、记录的纵向顺序。
+- 本地云端 101 项测试、构建通过；lint 无错误，仅既有 MobileChatPage Hook warning。浏览器连接恢复项目实测桌面坐标和手机无溢出通过；Runner 离线响应为模拟，此次不验证引擎执行或删除行为。
+- 本地截图保存在仓库外 `/tmp/dsa-layout-local-desktop.png` 和 `/tmp/dsa-layout-local-mobile.png`。仅页面结构和间距改变，无数据库迁移或数据操作；可回滚至 `dpl_HdDZX2Ux3dhDrrAUMvk1h9wY7m83`。中文专题无对应英文版本。
+- 正式部署 `dpl_FdwFYd9kjJ3EJ8a8sqd6uHhbyGcr` 已绑定正式域名；真实登录后的桌面 20px 间距、标题与右侧顶部对齐、手机纵向顺序和无溢出均通过。证据：`/tmp/dsa-layout-browser-production.log`、`/tmp/dsa-layout-production-desktop.png`、`/tmp/dsa-layout-production-mobile.png`。未重新运行分析或删除报告，此次仅布局验收。

@@ -148,11 +148,11 @@ function Workspace({ client, session, api, logout }: { client: SupabaseClient; s
     <header className="cloud-header"><div className="cloud-brand-actions"><Link to="/" className="cloud-brand">DSA <span>研究档案</span></Link><Tooltip content={refreshing ? '刷新中…' : '刷新页面'} side="bottom"><button className="cloud-refresh-button" type="button" aria-label="刷新" aria-busy={refreshing} disabled={refreshing} onClick={refresh}><RefreshCw size={16} aria-hidden="true" /></button></Tooltip></div>
       <div className="cloud-actions"><span className="cloud-muted">{session.user.email}</span><Account client={client} /><button onClick={logout}>退出登录</button></div></header>
     <Routes><Route path="/reports/:id" element={<ReportDetailRoute api={api} user={session.user.id} />} />
-      <Route path="/" element={<><div className="cloud-intro"><div><h1>分析工作台</h1><p className="cloud-muted">发起分析，回看每一次判断。</p></div>
+      <Route path="/" element={<div className="cloud-grid"><div className="cloud-sidebar"><div className="cloud-intro"><div><h1>分析工作台</h1><p className="cloud-muted">发起分析，回看每一次判断。</p></div>
         </div>
-        <div className="cloud-grid"><Watchlist api={api} user={session.user.id} /><main className="cloud-stack">
+        <Watchlist api={api} user={session.user.id} /></div><main className="cloud-stack">
           <RunnerPanel client={client} accessToken={session.access_token} user={session.user.id} onReport={() => setRevision((n) => n + 1)} reportRevision={revision} />
-          <AnalysisRecords api={api} user={session.user.id} revision={revision} pageSize={pageSize} formatDate={date} onChanged={() => setRevision((n) => n + 1)} /></main></div></>} />
+          <AnalysisRecords api={api} user={session.user.id} revision={revision} pageSize={pageSize} formatDate={date} onChanged={() => setRevision((n) => n + 1)} /></main></div>} />
       <Route path="*" element={<main className="cloud-panel">页面不存在。<Link to="/">返回报告列表</Link></main>} /></Routes>
     <footer className="cloud-muted">分析仅供研究参考 · 时间显示：{displayZone}</footer>
   </div></BrowserRouter>;

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] 将工作台标题收进左侧栏，消除右侧发起分析上方由通栏标题造成的留白。
+
 - [改进] 将页面刷新移至顶栏品牌右侧并收紧标题区留白。
 - [新功能] 回收站支持确认后永久删除本人报告与私有附件，保留失败重试及发布墓碑，阻止恢复和重试复活。
 
