@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { flushSync } from 'react-dom';
+import { RefreshCw } from 'lucide-react';
+import { Tooltip } from '../components/common/Tooltip';
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { BrowserRouter, Link, Route, Routes, useParams } from 'react-router-dom';
 import { ReportMarkdownBody } from '../components/report/ReportMarkdownBody';
@@ -139,12 +142,14 @@ function Account({ client }: { client: SupabaseClient }) {
 
 function Workspace({ client, session, api, logout }: { client: SupabaseClient; session: Session; api: CloudData; logout: () => void }) {
   const [revision, setRevision] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = () => { flushSync(() => setRefreshing(true)); window.location.reload(); };
   return <BrowserRouter><div className="cloud-workspace">
-    <header className="cloud-header"><Link to="/" className="cloud-brand">DSA <span>研究档案</span></Link>
+    <header className="cloud-header"><div className="cloud-brand-actions"><Link to="/" className="cloud-brand">DSA <span>研究档案</span></Link><Tooltip content={refreshing ? '刷新中…' : '刷新页面'} side="bottom"><button className="cloud-refresh-button" type="button" aria-label="刷新" aria-busy={refreshing} disabled={refreshing} onClick={refresh}><RefreshCw size={16} aria-hidden="true" /></button></Tooltip></div>
       <div className="cloud-actions"><span className="cloud-muted">{session.user.email}</span><Account client={client} /><button onClick={logout}>退出登录</button></div></header>
     <Routes><Route path="/reports/:id" element={<ReportDetailRoute api={api} user={session.user.id} />} />
       <Route path="/" element={<><div className="cloud-intro"><div><h1>分析工作台</h1><p className="cloud-muted">发起分析，回看每一次判断。</p></div>
-        <button onClick={() => setRevision((n) => n + 1)}>刷新</button></div>
+        </div>
         <div className="cloud-grid"><Watchlist api={api} user={session.user.id} /><main className="cloud-stack">
           <RunnerPanel client={client} accessToken={session.access_token} user={session.user.id} onReport={() => setRevision((n) => n + 1)} reportRevision={revision} />
           <AnalysisRecords api={api} user={session.user.id} revision={revision} pageSize={pageSize} formatDate={date} onChanged={() => setRevision((n) => n + 1)} /></main></div></>} />

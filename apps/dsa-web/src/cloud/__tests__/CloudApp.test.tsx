@@ -130,3 +130,12 @@ test('closing an edit dialog returns focus to that stocks edit button', async ()
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
   expect(edit).toHaveFocus();
 });
+
+test('refresh sits beside the brand in the header', async () => {
+  auth.getSession.mockResolvedValue({ data: { session }, error: null });
+  render(<CloudApp />);
+  await screen.findByRole('heading', { name: '分析工作台' });
+  const header = screen.getByRole('banner');
+  expect(within(header).getByRole('button', { name: '刷新' })).toBeInTheDocument();
+  expect(screen.getAllByRole('button', { name: '刷新' })).toHaveLength(1);
+});

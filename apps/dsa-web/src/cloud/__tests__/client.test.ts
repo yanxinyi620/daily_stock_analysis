@@ -37,7 +37,7 @@ test('records are paginated and owner-filtered, retaining failed tasks and joini
   expect(result).toMatchObject({ count: 4, active: true });
   expect(result.rows[0]).toMatchObject({ id: 'task-1', status: 'publish_failed', codes: ['600519'], report: page.data[0].analysis_reports[0], execution: execution.data[0] });
   expect(calls).toContainEqual({ table: 'analysis_tasks', method: 'range', args: [40, 59] });
-  expect(calls.filter((c) => c.table === 'analysis_tasks' && c.method === 'is')).toHaveLength(2);
+  expect(calls.filter((c) => c.table === 'analysis_tasks' && c.method === 'is')).toHaveLength(4);
   expect(calls).toContainEqual({ table: 'analysis_tasks', method: 'is', args: ['deleted_at', null] });
   expect(calls.find((c) => c.method === 'select')?.args[0]).toContain('stock_name:results->0->>name');
   expect(calls).toContainEqual({ table: 'analysis_tasks', method: 'eq', args: ['user_id', 'user-a'] });
@@ -80,8 +80,8 @@ test('one client owns the session across repeated component renders', async () =
 });
 
 test('trash requests exclude active count and restore uses authenticated RPC without client owner input', async () => {
-  const builder = { select: vi.fn(), eq: vi.fn(), not: vi.fn(), order: vi.fn(), range: vi.fn() };
-  for (const key of ['select', 'eq', 'not', 'order'] as const) builder[key].mockReturnValue(builder);
+  const builder = { select: vi.fn(), eq: vi.fn(), is: vi.fn(), not: vi.fn(), order: vi.fn(), range: vi.fn() };
+  for (const key of ['select', 'eq', 'is', 'not', 'order'] as const) builder[key].mockReturnValue(builder);
   builder.range.mockResolvedValue({ data: [], error: null, count: 0 });
   const from = vi.fn().mockReturnValue(builder);
   const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
@@ -93,4 +93,16 @@ test('trash requests exclude active count and restore uses authenticated RPC wit
   expect(rpc).toHaveBeenCalledWith('cloud_set_report_deleted', { p_task_id: 'record', p_deleted: false });
   rpc.mockResolvedValue({ data: null, error: new Error('private denial') });
   await expect(api.setRecordDeleted('other', true)).rejects.toThrow(/请求失败/);
+});
+
+test('permanent deletion sends only the report ID with the current session token', async () => {
+  const client = { auth: { getSession: vi.fn().mockResolvedValue({ data: { session: { access_token: 'session-token' } }, error: null }) } };
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }));
+  try {
+    await cloudData(client as never).permanentlyDeleteReport('id');
+    expect(fetcher).toHaveBeenCalledWith('/api/reports', expect.objectContaining({ method: 'DELETE', headers: expect.objectContaining({ Authorization: 'Bearer session-token' }), body: JSON.stringify({ report_id: 'id' }) }));
+    client.auth.getSession.mockResolvedValue({ data: { session: null }, error: null } as never);
+    await expect(cloudData(client as never).permanentlyDeleteReport('id')).rejects.toThrow();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  } finally { fetcher.mockRestore(); }
 });

@@ -24,6 +24,7 @@ export interface AnalysisRecord {
   updated_at: string;
   codes: string[];
   deleted_at?: string | null;
+  purge_started_at?: string | null;
   report: ReportIndex | null;
   execution: RecordExecution | null;
 }
@@ -87,14 +88,14 @@ export function cloudData(client: SupabaseClient) {
     },
     async records(user: string, page: number, size: number, trash = false) {
       const index = client.from('analysis_tasks')
-        .select('id,status,updated_at,deleted_at,codes:input_snapshot->codes,analysis_reports(task_id,title,generated_at,market_as_of,stock_name:results->0->>name,stock_code:results->0->>code)', { count: 'exact' })
-        .eq('user_id', user);
+        .select('id,status,updated_at,deleted_at,purge_started_at,codes:input_snapshot->codes,analysis_reports(task_id,title,generated_at,market_as_of,stock_name:results->0->>name,stock_code:results->0->>code)', { count: 'exact' })
+        .eq('user_id', user).is('purged_at', null);
       const filtered = trash ? index.not('deleted_at', 'is', null) : index.is('deleted_at', null);
       const [taskResult, activeResult] = await Promise.all([
         filtered.order('updated_at', { ascending: false }).order('id')
           .range(page * size, (page + 1) * size - 1),
         trash ? Promise.resolve({ data: null, count: 0, error: null }) : client.from('analysis_tasks').select('id', { count: 'exact', head: true })
-          .eq('user_id', user).eq('status', 'publishing').is('deleted_at', null),
+          .eq('user_id', user).eq('status', 'publishing').is('deleted_at', null).is('purged_at', null),
       ]);
       const tasks = (checked(taskResult) ?? []) as Array<{
         id: string;
@@ -102,6 +103,7 @@ export function cloudData(client: SupabaseClient) {
         updated_at: string;
         codes?: unknown;
         deleted_at?: string | null;
+        purge_started_at?: string | null;
         analysis_reports?: ReportIndex | ReportIndex[] | null;
       }>;
       checked(activeResult);
@@ -120,7 +122,7 @@ export function cloudData(client: SupabaseClient) {
         rows: tasks.map((task) => {
           const report = Array.isArray(task.analysis_reports) ? task.analysis_reports[0] ?? null : task.analysis_reports ?? null;
           const codes = Array.isArray(task.codes) ? task.codes.filter((code): code is string => typeof code === 'string') : [];
-          return { id: task.id, status: task.status, updated_at: task.updated_at, deleted_at: task.deleted_at ?? null, codes, report, execution: executionByReport.get(task.id) ?? null };
+          return { id: task.id, status: task.status, updated_at: task.updated_at, deleted_at: task.deleted_at ?? null, purge_started_at: task.purge_started_at ?? null, codes, report, execution: executionByReport.get(task.id) ?? null };
         }) as AnalysisRecord[],
         count: taskResult.count ?? 0,
         active: !trash && ((activeResult.count ?? 0) > 0 || tasks.some((task) => task.status === 'publishing')),
@@ -129,6 +131,15 @@ export function cloudData(client: SupabaseClient) {
     async setRecordDeleted(id: string, deleted: boolean) {
       // Ownership is derived by the database from the authenticated session.
       checked(await client.rpc('cloud_set_report_deleted', { p_task_id: id, p_deleted: deleted }));
+    },
+    async permanentlyDeleteReport(id: string) {
+      const session = await client.auth.getSession();
+      if (session.error || !session.data.session?.access_token) throw new Error('请重新登录后重试。');
+      const response = await fetch('/api/reports', {
+        method: 'DELETE', headers: { Authorization: `Bearer ${session.data.session.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ report_id: id }), signal: AbortSignal.timeout(30000),
+      });
+      if (!response.ok) throw new Error('永久删除未完成，请稍后重试。');
     },
     async report(user: string, id: string): Promise<CloudReport> {
       const data = checked(await client.from('analysis_reports').select('task_id,title,markdown,bucket,object_path,generated_at,market_as_of,stock_name:results->0->>name,stock_code:results->0->>code')

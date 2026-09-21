@@ -39,6 +39,23 @@
   border-bottom: 1px solid #8090a323;
   padding: 18px 0;
 }
+.cloud-brand-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cloud-refresh-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.cloud-refresh-button[aria-busy="true"] svg {
+  animation: cloud-refresh-spin 1s linear infinite;
+}
+@keyframes cloud-refresh-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .cloud-refresh-button[aria-busy="true"] svg { animation: none; }
+}
 .cloud-brand {
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -55,7 +72,7 @@
   justify-content: space-between;
   align-items: center;
   gap: 20px;
-  padding: 26px 0 20px;
+  padding: 16px 0;
 }
 .cloud-panel {
   border: 1px solid #8090a32b;
@@ -437,7 +454,7 @@
     display: none;
   }
   .cloud-intro {
-    padding: 22px 0 18px;
+    padding: 16px 0;
   }
   .cloud-panel {
     padding: 18px;

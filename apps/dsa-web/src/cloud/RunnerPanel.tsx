@@ -30,7 +30,7 @@ export function RunnerPanel({ client, accessToken, user, onReport, reportRevisio
   const [task, setTask] = useState<Task>();
   const [error, setError] = useState('');
   const [historyError, setHistoryError] = useState('');
-  const [archivedReports, setArchivedReports] = useState<Set<string>>(new Set());
+  const [reportDeletionStates, setReportDeletionStates] = useState<Record<string, string>>({});
   const [archiveError, setArchiveError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const mountedRef = useRef(false);
@@ -76,12 +76,12 @@ export function RunnerPanel({ client, accessToken, user, onReport, reportRevisio
   const refreshArchivedReports = useCallback(async (tasks: Task[]) => {
     const request = ++archiveRequest.current;
     const reportIds = tasks.flatMap((item) => item.report_id ? [item.report_id] : []);
-    if (!reportIds.length) { if (mountedRef.current && request === archiveRequest.current) { setArchivedReports(new Set()); setArchiveError(''); } return; }
+    if (!reportIds.length) { if (mountedRef.current && request === archiveRequest.current) { setReportDeletionStates({}); setArchiveError(''); } return; }
     try {
-      const result = await client.from('analysis_tasks').select('id,deleted_at').eq('user_id', user).in('id', reportIds);
+      const result = await client.from('analysis_tasks').select('id,deleted_at,purge_started_at,purged_at').eq('user_id', user).in('id', reportIds);
       if (result.error) throw result.error;
-      const rows = (result.data ?? []) as Array<{ id: string; deleted_at: string | null }>;
-      if (mountedRef.current && request === archiveRequest.current) { setArchivedReports(new Set(rows.filter((row) => row.deleted_at).map((row) => row.id))); setArchiveError(''); }
+      const rows = (result.data ?? []) as Array<{ id: string; deleted_at: string | null; purge_started_at: string | null; purged_at: string | null }>;
+      if (mountedRef.current && request === archiveRequest.current) { setReportDeletionStates(Object.fromEntries(rows.filter((row) => row.deleted_at).map((row) => [row.id, row.purged_at ? '报告已永久删除' : row.purge_started_at ? '报告正在永久删除' : '报告已移入回收站']))); setArchiveError(''); }
     } catch { if (mountedRef.current && request === archiveRequest.current) setArchiveError('回收站状态查询失败，报告可能已移入回收站。'); }
   }, [client, user]);
 
@@ -210,8 +210,7 @@ export function RunnerPanel({ client, accessToken, user, onReport, reportRevisio
     try { return `最近连接：${new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(runner.last_seen_at))}`; }
     catch { return '最近连接时间暂不可用'; }
   };
-  const isArchived = (value: Task) => Boolean(value.report_id && archivedReports.has(value.report_id));
-  const reportLink = (value: Task) => value.report_id ? <>{isArchived(value) ? <span className="cloud-muted">报告已移入回收站</span> : <Link to={`/reports/${value.report_id}`}>查看报告</Link>}</> : null;
+  const reportLink = (value: Task) => value.report_id ? <>{reportDeletionStates[value.report_id] ? <span className="cloud-muted">{reportDeletionStates[value.report_id]}</span> : <Link to={`/reports/${value.report_id}`}>查看报告</Link>}</> : null;
   return <section className="cloud-panel">
     <div className="cloud-section-heading"><h2>发起分析</h2><span className={`cloud-runner-state is-${stateLabel === '在线' ? 'online' : stateLabel === '离线' ? 'offline' : 'unknown'}`}>{stateLabel}</span></div>
     <p className="cloud-muted cloud-runner-connection">{lastSeen()}</p>

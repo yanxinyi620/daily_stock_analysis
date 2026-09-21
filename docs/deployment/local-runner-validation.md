@@ -142,3 +142,15 @@
 - 本地验证：云端相关 84 项测试通过，lint 无错误（既有 MobileChatPage Hook 警告 1 条），普通和云端构建通过。既有综合分析结果测试改为覆盖当前提交返回的结果，并验证历史列表与提示不再渲染。
 - 无数据库、Storage、环境变量或引擎变更；本轮不重新执行真实分析。回滚至前版 Vercel 部署 `dpl_9v2fVbbvV3p6LZZXkZ5TrK3Z8Yvh` 即可恢复原展示，无需回滚数据。此中文专题无对应英文文档。
 - 正式部署 `dpl_CYEMbdSn2i9U3WnhgkKCPi4aLrqf` 已 READY 并绑定 `https://stock.xinyilab.top`。真实 A 账号浏览器验证最近连接为 12px、近期执行记录与综合分析快照提示均不再显示、复盘市场控件与 4 份报告保留、手机无整页横向溢出；未提交分析任务。截图位于仓库外 `/tmp/dsa-panel-production-desktop.png`、`/tmp/dsa-panel-production-mobile.png`，日志 `/tmp/dsa-panel-browser.log`。
+
+## 2026-09-21 顶栏刷新与回收站永久删除
+
+- 顶栏品牌右侧使用紧凑刷新图标与提示，点击完整刷新当前页面，保留登录会话；标题区缩小留白。回收站增加永久删除二次确认，失败重新读取状态并保留重试入口，开始删除后禁止恢复。仅删除发布报告及附件，独立执行记录和引擎历史保留。
+- 迁移 `202609210002_cloud_report_purge.sql` 先恢复项目、后正式项目应用。对两项目的 tasks（排除新增空列）、reports、execution、runner、watchlist、member、engine history 和 Storage 对象记录做摘要比较，原数据保持一致。测试只创建并清理带本次标记的新样例。
+- 本地：云端前端及 API 12 组／101 项测试通过；迁移静态测试 4 项通过；lint 无错误（MobileChatPage 既有 Hook warning）；普通前端与云端构建通过。SQL 事务回滚套件在真实恢复项目通过，覆盖权限、进行中保护、重复操作、附件未删除保护、读取隔离、恢复及发布防复活。
+- 真实恢复项目：本地运行正式 API handler，使用真实 Auth、RPC 和 Storage；A 删除新建报告与实际附件后，数据库和认证下载确认均已清理。B／匿名拒绝、未入回收站拒绝、重复删除、手动中断后重试通过。浏览器真实登录、刷新会话保持、取消及确认永久删除、手机布局通过。浏览器的 Runner 离线响应为模拟，不作为分析引擎验收。
+- 截图与日志保存在仓库外 `/tmp/dsa-purge-restore-confirm.png`、`/tmp/dsa-purge-restore-desktop.png`、`/tmp/dsa-purge-restore-mobile.png`、`/tmp/dsa-purge-browser-live.log`；迁移与数据保留摘要为 `/tmp/dsa-purge-migration-DSA_RESTORE.json`、`/tmp/dsa-purge-migration-DSA_SOURCE.json`。首次浏览器脚本按钮名称定位错误，修正匹配完整无障碍名称后通过，未放宽产品断言。
+- 边界：没有删除正式已有报告；未执行新的个股、大盘或综合分析。永久删除正向链路的证据来自本地 API 连接真实恢复项目，不能替代 Vercel 上的破坏性端到端验收。
+- 回滚可将前端恢复至 `dpl_CYEMbdSn2i9U3WnhgkKCPi4aLrqf`，保留增量数据库结构和数据。旧前端可能展示已删除发布墓碑，但不能恢复已清理正文或附件；回滚部署不能撤销永久删除。中文专题无对应英文版本，未修改 README。
+
+- 正式 Vercel 部署 `dpl_HdDZX2Ux3dhDrrAUMvk1h9wY7m83` 已绑定 `https://stock.xinyilab.top`；远端构建通过，DELETE 路由真实校验匿名 401、B 操作 A 403、A 未入回收站 409。浏览器刷新后登录保留，记录数按本人数据库查询核对：A 为 3 条正常、1 条回收站（并非 4 条都在正常列表）。正式页面的永久删除确认框只取消，不提交删除。验收日志 `/tmp/dsa-purge-production.log`，截图 `/tmp/dsa-purge-production-desktop.png` 与 `/tmp/dsa-purge-production-mobile.png`。

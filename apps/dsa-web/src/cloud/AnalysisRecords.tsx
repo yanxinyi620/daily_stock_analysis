@@ -13,6 +13,7 @@ function title(row: AnalysisRecord) {
   return value.replace(/\bCOMPOSITE\b/g, '综合分析').replace(/\bMARKET\b/g, '大盘复盘');
 }
 function recordState(row: AnalysisRecord): { label: string; tone: string } {
+  if (row.purge_started_at) return { label: '待完成删除', tone: 'publish_failed' };
   if (row.status === 'publishing') return { label: '保存中', tone: 'publishing' };
   if (row.status === 'publish_failed') return { label: '保存失败', tone: 'publish_failed' };
   if (row.status === 'cancelled') return { label: '已取消', tone: 'cancelled' };
@@ -39,6 +40,7 @@ export function AnalysisRecords({ api, user, revision, pageSize, formatDate, onC
   const [downloading, setDownloading] = useState<string>();
   const [downloadError, setDownloadError] = useState('');
   const [pendingDelete, setPendingDelete] = useState<AnalysisRecord>();
+  const [permanent, setPermanent] = useState(false);
   const [changing, setChanging] = useState(false);
   const [changeError, setChangeError] = useState('');
   const [message, setMessage] = useState('');
@@ -55,6 +57,19 @@ export function AnalysisRecords({ api, user, revision, pageSize, formatDate, onC
     } catch { setChangeError('操作失败，请确认任务已结束，并检查网络及账户权限后重试。'); }
     finally { setChanging(false); }
   };
+  const purge = async (id: string) => {
+    setChanging(true); setChangeError(''); setMessage('');
+    try {
+      await api.permanentlyDeleteReport(id);
+      setPendingDelete(undefined); setMessage('报告及附件已永久删除。');
+      setRetry((n) => n + 1); onChanged?.();
+    } catch {
+      // The server may have locked deletion or removed the attachment already.
+      // Re-query so the UI cannot offer restore after partial completion.
+      setChangeError('删除未完成，请重试永久删除；已开始删除的记录不能恢复。');
+      setRetry((n) => n + 1); onChanged?.();
+    } finally { setChanging(false); }
+  };
   const download = async (id: string) => {
     setDownloading(id); setDownloadError('');
     try {
@@ -69,7 +84,7 @@ export function AnalysisRecords({ api, user, revision, pageSize, formatDate, onC
   return <section className="cloud-panel cloud-records">
     <div className="cloud-section-heading"><div className="cloud-records-heading"><h2>{trash ? '回收站' : '分析记录'}</h2><span className="cloud-muted">{count} 条</span></div>
       <button disabled={changing} onClick={() => { setTrash(!trash); setPage(0); setMessage(''); setChangeError(''); setDownloadError(''); }}>{trash ? '返回分析记录' : '回收站'}</button></div>
-    {trash && <p className="cloud-muted cloud-records-caption">删除的记录保留在这里，可随时恢复，不会自动清空。</p>}
+    {trash && <p className="cloud-muted cloud-records-caption">可恢复尚未开始永久删除的记录，也可永久删除报告及附件。</p>}
     {error && <p role="alert">记录加载失败，请稍后重试。<button onClick={() => setRetry((n) => n + 1)}>重试</button></p>}
     {downloadError && <p role="alert">{downloadError}</p>}
     {changeError && !pendingDelete && <p role="alert">{changeError}</p>}
@@ -86,8 +101,8 @@ export function AnalysisRecords({ api, user, revision, pageSize, formatDate, onC
             <td><span className={`cloud-save-state is-${state.tone}`}>{state.label}</span></td>
             <td><time dateTime={row.report?.generated_at || row.updated_at}>{formatDate(row.report?.generated_at || row.updated_at)}</time></td>
             <td><div className="cloud-record-actions">{row.report ? <><Link to={`/reports/${row.id}`}>查看</Link><button disabled={downloading !== undefined} aria-label={`下载 ${title(row)}`} onClick={() => void download(row.id)}>{downloading === row.id ? '下载中…' : '下载'}</button></> : <span className="cloud-muted">暂无报告</span>}
-              {trash ? <button disabled={changing} aria-label={`恢复 ${title(row)}`} onClick={() => void changeDeleted(row.id, false)}>恢复</button>
-                : <button className="cloud-delete-action" disabled={changing || active} aria-label={`删除 ${title(row)}`} onClick={() => { setChangeError(''); setPendingDelete(row); }}>删除</button>}
+              {trash ? <><button disabled={changing || Boolean(row.purge_started_at)} aria-label={`恢复 ${title(row)}`} onClick={() => void changeDeleted(row.id, false)}>恢复</button><button className="cloud-delete-action" disabled={changing || active} aria-label={`永久删除 ${title(row)}`} onClick={() => { setPermanent(true); setChangeError(''); setPendingDelete(row); }}>{row.purge_started_at ? '重试删除' : '永久删除'}</button></>
+                : <button className="cloud-delete-action" disabled={changing || active} aria-label={`删除 ${title(row)}`} onClick={() => { setPermanent(false); setChangeError(''); setPendingDelete(row); }}>删除</button>}
             </div></td>
           </tr>;
         })}</tbody>
@@ -96,10 +111,10 @@ export function AnalysisRecords({ api, user, revision, pageSize, formatDate, onC
     {!loading && !rows.length && !error && <p className="cloud-muted">{trash ? '回收站为空。' : '暂无分析记录。分析结果开始保存后会出现在这里。'}</p>}
     <div className="cloud-records-footer"><details className="cloud-records-note cloud-muted"><summary>状态说明</summary><p>“已完成”和“部分完成”均已保存报告。“已保存”用于缺少完整分析结果信息的历史记录。任务结束后才可删除。</p></details>
       <div className="cloud-pagination"><button disabled={page === 0 || changing} onClick={() => setPage((n) => n - 1)}>上一页</button><span>第 {page + 1} 页</span><button disabled={(page + 1) * pageSize >= count || changing} onClick={() => setPage((n) => n + 1)}>下一页</button></div></div>
-    {pendingDelete && <CloudDialog title="移入回收站？" onClose={() => { setPendingDelete(undefined); setChangeError(''); }} busy={changing}>
-      <p>“{title(pendingDelete)}”将从分析列表移除，可在回收站恢复。报告与附件不会永久删除。</p>
+    {pendingDelete && <CloudDialog title={permanent ? '永久删除报告？' : '移入回收站？'} onClose={() => { setPendingDelete(undefined); setChangeError(''); }} busy={changing}>
+      <p>{permanent ? `永久删除“${title(pendingDelete)}”的报告正文和附件，无法恢复。已有分析任务记录将保留。` : `“${title(pendingDelete)}”将从分析列表移除，可在回收站恢复。报告与附件不会永久删除。`}</p>
       {changeError && <p role="alert">{changeError}</p>}
-      <div className="cloud-actions"><button disabled={changing} onClick={() => setPendingDelete(undefined)}>取消</button><button className="btn-primary" disabled={changing} onClick={() => void changeDeleted(pendingDelete.id, true)}>{changing ? '处理中…' : '移入回收站'}</button></div>
+      <div className="cloud-actions"><button disabled={changing} onClick={() => setPendingDelete(undefined)}>取消</button><button className="btn-primary" disabled={changing} onClick={() => void (permanent ? purge(pendingDelete.id) : changeDeleted(pendingDelete.id, true))}>{changing ? '处理中…' : permanent ? '永久删除' : '移入回收站'}</button></div>
     </CloudDialog>}
   </section>;
 }

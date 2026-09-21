@@ -6,6 +6,7 @@
   "outputDirectory": "dist",
   "routes": [
     { "src": "/api/tasks", "dest": "/api/tasks" },
+    { "src": "/api/reports", "dest": "/api/reports" },
     { "src": "/api(?:/.*)?", "status": 404 },
     { "handle": "filesystem" },
     { "src": "/.*", "dest": "/index.html", "headers": { "Cache-Control": "no-store" } }

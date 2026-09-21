@@ -6,7 +6,7 @@ import type { AnalysisRecord, CloudData } from '../client';
 
 const row = (values: Partial<AnalysisRecord> = {}): AnalysisRecord => ({ id: 'report-1', status: 'succeeded', updated_at: '2026-09-20T00:00:00Z', codes: ['COMPOSITE'], report: { task_id: 'report-1', title: 'COMPOSITE', generated_at: '2026-09-20T00:00:00Z', market_as_of: null }, execution: null, ...values });
 function setup(rows: AnalysisRecord[]) {
-  const api = { records: vi.fn().mockResolvedValue({ rows, count: rows.length, active: false }), report: vi.fn(), download: vi.fn(), setRecordDeleted: vi.fn().mockResolvedValue(undefined) };
+  const api = { records: vi.fn().mockResolvedValue({ rows, count: rows.length, active: false }), report: vi.fn(), download: vi.fn(), setRecordDeleted: vi.fn().mockResolvedValue(undefined), permanentlyDeleteReport: vi.fn().mockResolvedValue(undefined) };
   render(<MemoryRouter><AnalysisRecords api={api as unknown as CloudData} user="owner" revision={0} pageSize={1} formatDate={(value) => value} /></MemoryRouter>);
   return api;
 }
@@ -108,4 +108,33 @@ test('deleting the last row of the final page returns to the preceding page', as
   fireEvent.click(screen.getByRole('button', { name: '移入回收站' }));
   await waitFor(() => expect(api.records).toHaveBeenLastCalledWith('owner', 0, 1, false));
   await screen.findByRole('button', { name: '删除 综合分析' });
+});
+
+test('permanent deletion is confirmed only from trash and failures remain retryable', async () => {
+  const api = setup([row()]);
+  await screen.findByRole('table');
+  expect(screen.queryByRole('button', { name: '永久删除 综合分析' })).not.toBeInTheDocument();
+  api.records.mockResolvedValue({ rows: [row({ deleted_at: 'now' })], count: 1, active: false });
+  fireEvent.click(screen.getByRole('button', { name: '回收站' }));
+  fireEvent.click(await screen.findByRole('button', { name: '永久删除 综合分析' }));
+  expect(screen.getByRole('dialog')).toHaveTextContent('无法恢复');
+  fireEvent.click(screen.getByRole('button', { name: '取消' }));
+  expect(api.permanentlyDeleteReport).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '永久删除 综合分析' }));
+  api.permanentlyDeleteReport.mockRejectedValueOnce(new Error('secret details'));
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '永久删除' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('删除未完成');
+  expect(screen.queryByText('secret details')).not.toBeInTheDocument();
+  api.records.mockResolvedValue({ rows: [], count: 0, active: false });
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '永久删除' }));
+  await screen.findByText('回收站为空。');
+  expect(api.permanentlyDeleteReport).toHaveBeenCalledWith('report-1');
+});
+test('a partially deleted report cannot be restored and exposes a retry action', async () => {
+  const api = setup([]);
+  await screen.findByRole('table');
+  api.records.mockResolvedValue({ rows: [row({ deleted_at: 'now', purge_started_at: 'now', report: null })], count: 1, active: false });
+  fireEvent.click(screen.getByRole('button', { name: '回收站' }));
+  expect(await screen.findByRole('button', { name: '恢复 综合分析' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: '永久删除 综合分析' })).toHaveTextContent('重试删除');
 });

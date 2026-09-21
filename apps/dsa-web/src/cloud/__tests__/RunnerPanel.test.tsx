@@ -334,3 +334,19 @@ test('does not claim completion when a succeeded composite has no trustworthy su
   expect(screen.queryByText('已完成')).not.toBeInTheDocument();
   expect(screen.queryByText('部分完成')).not.toBeInTheDocument();
 });
+
+test('a current report permanently removed is not presented as recoverable', async () => {
+  const reportState = { in: vi.fn().mockResolvedValue({ data: [{ id: 'gone-report', deleted_at: 'now', purge_started_at: 'now', purged_at: 'now' }], error: null }) };
+  const execution = database().client;
+  const client = { from: vi.fn((table: string) => table === 'analysis_tasks' ? { select: () => ({ eq: () => reportState }) } : execution.from(table)) };
+  vi.spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(json({ online: true, busy: false, last_seen_at: null, current_task_id: null }))
+    .mockResolvedValueOnce(json({ ...task, status: 'succeeded', report_id: 'gone-report' }));
+  renderPanel(client as never);
+  await screen.findByText('在线');
+  fireEvent.change(screen.getByLabelText('代码'), { target: { value: '000001' } });
+  fireEvent.click(screen.getByRole('button', { name: '开始分析' }));
+  await screen.findByText('报告已永久删除');
+  expect(screen.queryByText('报告已移入回收站')).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: '查看报告' })).not.toBeInTheDocument();
+});
