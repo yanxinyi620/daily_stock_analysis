@@ -112,3 +112,23 @@ test('browser roles cannot submit daily tasks or read another owner task', async
   try { expect((await db.query(`select id from execution_tasks where user_id='${owner}'`)).rows).toEqual([]); }
   finally { await db.exec('reset role'); }
 });
+
+test('snapshot preserves a live daily claim then expires an interrupted run without resubmission', async () => {
+  const runner = 'daily-reconcile-test';
+  const request = '77777777-7777-4777-8777-777777777777';
+  await rpc(`select cloud_submit_daily_execution('${owner}','${runner}','${request}','${session}','us')`);
+  const claimed = await rpc(`select cloud_claim_execution('${owner}','${runner}','${session}') as task`);
+  const task = (claimed.rows[0] as {task: {id: string}}).task;
+  const reports = (await db.query('select task_id from analysis_reports order by task_id')).rows;
+  await rpc(`select cloud_runner_snapshot('${owner}','${runner}')`);
+  expect((await db.query(`select status from execution_tasks where id='${task.id}'`)).rows)
+    .toEqual([{status: 'running'}]);
+  await db.exec(`update runner_status set online_until=now()-interval '1 second' where runner_id='${runner}'`);
+  await rpc(`select cloud_runner_snapshot('${owner}','${runner}')`);
+  expect((await db.query(`select status,error_code from execution_tasks where id='${task.id}'`)).rows)
+    .toEqual([{status: 'failed', error_code: 'RUNNER_OFFLINE'}]);
+  await rpc(`select cloud_runner_snapshot('${owner}','${runner}')`);
+  expect((await db.query(`select count(*)::integer as count from execution_tasks where runner_id='${runner}'`)).rows)
+    .toEqual([{count: 1}]);
+  expect((await db.query('select task_id from analysis_reports order by task_id')).rows).toEqual(reports);
+});

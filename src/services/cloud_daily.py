@@ -29,7 +29,20 @@ def _trading_day(region: str, today: date) -> bool:
         raise RunnerError('TRADING_CALENDAR_UNAVAILABLE') from exc
 
 
-def run_cloud_daily(config, *, force_run: bool = False, now: datetime | None = None) -> int:
+def reconcile_cloud_daily(config, diagnostics=None) -> None:
+    """Expire abandoned leases without stopping a live session."""
+    if diagnostics is not None:
+        diagnostics.record('reconcile')
+    try:
+        RunnerTransport(config).rpc('cloud_runner_snapshot', p_runner_id=DAILY_RUNNER_ID)
+    except RunnerError as error:
+        if diagnostics is not None:
+            diagnostics.record('reconcile', error_code='RECONCILE_FAILED', error=error)
+        raise
+
+
+def run_cloud_daily(config, *, force_run: bool = False, now: datetime | None = None,
+                    diagnostics=None) -> int:
     """Submit and execute one deterministic daily composite task.
 
     The submission RPC registers the dedicated Actions identity atomically. A
@@ -39,9 +52,14 @@ def run_cloud_daily(config, *, force_run: bool = False, now: datetime | None = N
     region = str(getattr(config, 'market_review_region', 'cn'))
     if region not in REGIONS:
         raise RunnerError('INVALID_INPUT')
+    reconcile_cloud_daily(config, diagnostics)
+    if diagnostics is not None:
+        diagnostics.record('calendar', region=region)
     from src.core.trading_calendar import get_market_now
     run_date = get_market_now(region, now).date()
     if not force_run and not _trading_day(region, run_date):
+        if diagnostics is not None:
+            diagnostics.record('calendar', outcome='skipped_non_trading')
         logger.info('Daily cloud analysis skipped: non-trading day')
         return 0
 
@@ -54,6 +72,9 @@ def run_cloud_daily(config, *, force_run: bool = False, now: datetime | None = N
                          lambda task, progress: execute_composite(config, task, progress,
                                                                  cancel_requested=runner.stopped.is_set,
                                                                  trigger_source='github_actions'))
+    runner.diagnostics = diagnostics
+    if diagnostics is not None:
+        diagnostics.record('submit')
     request_id = str(uuid5(NAMESPACE_URL, f'dsa-daily:{transport.user_id}:{run_date.isoformat()}:{region}'))
     task = transport.rpc('cloud_submit_daily_execution', p_runner_id=settings.runner_id,
                          p_request_id=request_id, p_session_id=runner.session_id, p_region=region)
@@ -61,21 +82,35 @@ def run_cloud_daily(config, *, force_run: bool = False, now: datetime | None = N
         raise RunnerError('INVALID_TASK')
     status = task.get('status')
     if status in ('succeeded', 'failed'):
+        if diagnostics is not None:
+            diagnostics.record('submit', outcome='already_' + status)
         return 0 if status == 'succeeded' else 1
     task_session = task.get('session_id')
     if status != 'pending' or task_session != runner.session_id:
+        if diagnostics is not None:
+            diagnostics.record('submit', outcome='busy')
         # A pending/running retry belongs to another process. Never steal its
         # lease or stop it during cleanup.
         return 1
     if not isinstance(task_session, str):
         raise RunnerError('INVALID_TASK')
-    runner.start_existing()
     try:
+        runner.start_existing()
+        if diagnostics is not None:
+            diagnostics.record('database')
         from src.services.cloud_engine_storage import initialize_cloud_engine
         initialize_cloud_engine(config.cloud_runner_database_url)
+        if diagnostics is not None:
+            diagnostics.record('claim')
         claimed = runner._rpc('cloud_claim_execution')
         if not claimed or claimed.get('id') != task.get('id'):
+            if diagnostics is not None:
+                diagnostics.record('claim', error_code='CLAIM_MISMATCH')
             return 1
         return 0 if runner.execute_task(claimed) else 1
     finally:
         runner.close()
+        try:
+            reconcile_cloud_daily(config, diagnostics)
+        except RunnerError:
+            logger.warning('Daily cleanup unavailable; next invocation will reconcile expired leases')

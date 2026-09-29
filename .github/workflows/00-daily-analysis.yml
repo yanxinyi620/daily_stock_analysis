@@ -45,6 +45,7 @@ jobs:
     
     steps:
       - name: 随机延迟（避免固定时间访问）
+        if: env.CLOUD_DAILY_ACTIVE != 'true'
         run: sleep $((RANDOM % 60))  # 随机延迟0-60秒启动
       
       - name: 检出代码
@@ -594,6 +595,25 @@ jobs:
             logs/
           retention-days: 30
       
+      - name: 清理云端过期任务
+        if: always() && env.CLOUD_DAILY_ACTIVE == 'true'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SUPABASE_PUBLISH_USER_ID: ${{ secrets.SUPABASE_PUBLISH_USER_ID }}
+        run: python scripts/run_cloud_daily.py --reconcile-only
+
+      - name: 上传云端安全诊断
+        if: always() && env.CLOUD_DAILY_ACTIVE == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: cloud-daily-diagnostics-${{ github.run_number }}
+          path: |
+            logs/cloud-daily-diagnostics.json
+            logs/cloud-daily-cleanup.json
+          retention-days: 7
+          if-no-files-found: warn
+
       - name: 显示运行结果
         if: always() && env.CLOUD_DAILY_ACTIVE != 'true'
         run: |

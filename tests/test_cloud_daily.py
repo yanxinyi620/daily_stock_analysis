@@ -31,6 +31,8 @@ class FakeTransport:
 
     def rpc(self, name, **params):
         self.calls.append((name, params))
+        if name == 'cloud_runner_snapshot':
+            return {'online': False, 'busy': False}
         if name == 'cloud_submit_daily_execution':
             return self.response
         raise AssertionError(name)
@@ -79,10 +81,15 @@ def patch_runtime(monkeypatch):
     monkeypatch.setattr('src.services.cloud_engine_storage.initialize_cloud_engine', lambda _url: None)
 
 
-def test_non_trading_day_skips_before_registration(monkeypatch):
+def test_non_trading_day_reconciles_before_skipping_registration(monkeypatch):
+    patch_runtime(monkeypatch)
+    transport = FakeTransport(config())
+    monkeypatch.setattr(cloud_daily, 'RunnerTransport', lambda _config: transport)
     monkeypatch.setattr(cloud_daily, '_trading_day', lambda _region, _date: False)
     monkeypatch.setattr('src.services.cloud_engine_storage.initialize_cloud_engine', lambda _url: pytest.fail('must not initialize'))
     assert cloud_daily.run_cloud_daily(config(), now=datetime(2026, 9, 20)) == 0
+    assert [name for name, _ in transport.calls] == ['cloud_runner_snapshot']
+    assert not FakeRunner.instances
 
 
 def test_terminal_same_day_retry_does_not_start_runner_or_engine(monkeypatch):
@@ -116,7 +123,7 @@ def test_pending_daily_task_attaches_existing_session_and_returns_success(monkey
     assert FakeRunner.instances[0].started is True
     assert FakeRunner.instances[0].closed is True
     assert FakeRunner.instances[0].session_id == '22222222-2222-4222-8222-222222222222'
-    assert [name for name, _ in transport.calls] == ['cloud_submit_daily_execution', 'cloud_claim_execution']
+    assert [name for name, _ in transport.calls] == ['cloud_runner_snapshot', 'cloud_submit_daily_execution', 'cloud_claim_execution', 'cloud_runner_snapshot']
 
 
 def test_failed_daily_task_returns_failure_without_automatic_reanalysis(monkeypatch):
@@ -144,7 +151,7 @@ def test_foreign_active_session_is_not_stolen_or_stopped(monkeypatch):
     runner = FakeRunner.instances[0]
     assert runner.started is False
     assert runner.closed is False
-    assert [name for name, _ in transport.calls] == ['cloud_submit_daily_execution']
+    assert [name for name, _ in transport.calls] == ['cloud_runner_snapshot', 'cloud_submit_daily_execution']
 
 
 def test_failed_terminal_retry_returns_one_without_starting_or_stopping_runner(monkeypatch):
@@ -236,3 +243,34 @@ def test_daily_runner_overrides_local_long_lease_settings(monkeypatch):
     assert settings.online_seconds == 60
     assert settings.claim_seconds == 30
     assert settings.heartbeat_seconds < settings.online_seconds / 2
+
+
+@pytest.mark.parametrize(('region', 'expected_date'), [
+    ('cn', '2026-09-23'), ('hk', '2026-09-23'), ('us', '2026-09-22'),
+])
+def test_daily_request_uses_market_local_date(monkeypatch, region, expected_date):
+    patch_runtime(monkeypatch)
+    transport = FakeTransport(config())
+    monkeypatch.setattr(cloud_daily, 'RunnerTransport', lambda _config: transport)
+    cfg = config()
+    cfg.market_review_region = region
+    monkeypatch.setattr(cloud_daily, '_trading_day', lambda *_: True)
+    assert cloud_daily.run_cloud_daily(cfg, now=datetime(2026, 9, 22, 23, tzinfo=timezone.utc)) == 0
+    params = next(params for name, params in transport.calls if name == 'cloud_submit_daily_execution')
+    assert params['p_region'] == region
+    assert params['p_request_id'] == str(uuid5(NAMESPACE_URL, f'dsa-daily:{OWNER}:{expected_date}:{region}'))
+
+
+def test_reconcile_failure_records_safe_stage(monkeypatch, tmp_path):
+    from src.services.cloud_daily_diagnostics import DailyDiagnostics
+    patch_runtime(monkeypatch)
+    transport = FakeTransport(config())
+    monkeypatch.setattr(cloud_daily, 'RunnerTransport', lambda _config: transport)
+    def fail(*args, **kwargs):
+        raise RunnerError('RUNNER_TRANSPORT', http_status=503)
+    monkeypatch.setattr(transport, 'rpc', fail)
+    diagnostics = DailyDiagnostics(tmp_path / 'daily.json')
+    with pytest.raises(RunnerError):
+        cloud_daily.run_cloud_daily(config(), diagnostics=diagnostics)
+    assert diagnostics.snapshot()['events'][-1]['error_code'] == 'RECONCILE_FAILED'
+    assert FakeRunner.instances == []

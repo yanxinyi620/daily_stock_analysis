@@ -19,6 +19,10 @@ logger = logging.getLogger(__name__)
 class RunnerError(RuntimeError):
     """Sanitized runner failure; secrets and backend bodies never form its message."""
 
+    def __init__(self, message, *, http_status=None):
+        super().__init__(message)
+        self.http_status = http_status if type(http_status) is int and 100 <= http_status <= 599 else None
+
 
 @dataclass(frozen=True)
 class RunnerSettings:
@@ -51,8 +55,9 @@ class RunnerTransport(CloudPublisher):
             return self._request('POST', f'/rest/v1/rpc/{name}', json_body={
                 'p_user_id': self.user_id, **params,
             })
-        except PublishError:
-            raise RunnerError('RUNNER_TRANSPORT') from None
+        except PublishError as error:
+            status = re.fullmatch(r'publish HTTP ([1-5][0-9]{2}); retry the saved package', str(error))
+            raise RunnerError('RUNNER_TRANSPORT', http_status=int(status[1]) if status else None) from None
 
 
 class RunnerPublisher(CloudPublisher):
@@ -88,6 +93,14 @@ class CloudRunner:
         self.stopped = threading.Event()
         self.heartbeat_thread = None
         self.watchlist_names = None
+        self.diagnostics = None
+
+    def _record(self, stage, **fields):
+        if self.diagnostics is not None:
+            try:
+                self.diagnostics.record(stage, **fields)
+            except OSError:
+                logger.warning('Cloud diagnostic evidence could not be saved')
 
     def _rpc(self, name: str, **params):
         return self.transport.rpc(name, p_runner_id=self.settings.runner_id,
@@ -107,7 +120,8 @@ class CloudRunner:
         while not self.stopped.wait(self.settings.heartbeat_seconds):
             try:
                 self._rpc('cloud_runner_heartbeat')
-            except RunnerError:
+            except RunnerError as error:
+                self._record('heartbeat', error_code='RUNNER_TRANSPORT', error=error)
                 # Fail closed. A partition must not let this process claim another task.
                 logger.error('Runner heartbeat unavailable; stopping new work')
                 self.stopped.set()
@@ -118,7 +132,8 @@ class CloudRunner:
             self.heartbeat_thread.join(timeout=self.transport.timeout if isinstance(self.transport.timeout, (int, float)) else 5)
         try:
             self._rpc('cloud_runner_stop')
-        except RunnerError:
+        except RunnerError as error:
+            self._record('stop', error_code='STOP_UNCONFIRMED', error=error)
             logger.warning('Runner stop could not be confirmed; heartbeat lease will expire')
 
     def execute_task(self, task: dict):
@@ -129,9 +144,13 @@ class CloudRunner:
         report_id = str(uuid5(NAMESPACE_URL, f'dsa-report:{self.transport.user_id}:{task_id}'))
         package = self.settings.package_dir / f'{report_id}.json'
         error = 'ANALYSIS_FAILED'
+        stage = 'analysis'
+        self._record(stage)
         try:
             if package.exists():
                 error = 'PUBLISH_FAILED'
+                stage = 'publish'
+                self._record(stage)
                 envelope = json.loads(package.read_text(encoding='utf-8'))
                 self.publisher._validate_envelope(envelope)
                 if envelope['task_id'] != report_id:
@@ -144,7 +163,8 @@ class CloudRunner:
                     try:
                         self._rpc('cloud_progress_execution', p_task_id=task_id,
                                   p_progress=max(0, min(99, int(value))), p_message='正在分析')
-                    except RunnerError:
+                    except RunnerError as failure:
+                        self._record('analysis', error_code='RUNNER_TRANSPORT', error=failure)
                         self.stopped.set()
                         raise
                 if task['task_type'] == 'composite_analysis':
@@ -160,6 +180,8 @@ class CloudRunner:
             if self.stopped.is_set():
                 raise RunnerError('RUNNER_STOPPED')
             error = 'PUBLISH_FAILED'
+            stage = 'publish'
+            self._record(stage)
             # Repeat only the saved content, never analysis. At most two HTTP publication attempts.
             for attempt in range(2):
                 try:
@@ -170,10 +192,15 @@ class CloudRunner:
                     if attempt == 1:
                         raise
             error = 'COMPLETION_UNCONFIRMED'
+            stage = 'complete'
+            self._record(stage)
             self._rpc('cloud_finish_execution', p_task_id=task_id, p_report_id=report_id,
                       p_error_code=None)
+            outcome = 'partial' if envelope['payload'].get('execution_summary', {}).get('outcome') == 'partial' else 'completed'
+            self._record('complete', outcome=outcome)
             return True
-        except Exception:
+        except Exception as failure:
+            self._record(stage, error_code=error, error=failure)
             logger.error('Cloud task did not complete: %s', error)
             try:
                 self._rpc('cloud_finish_execution', p_task_id=task_id, p_report_id=None,
