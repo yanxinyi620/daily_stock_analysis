@@ -7,6 +7,7 @@
   "routes": [
     { "src": "/api/tasks", "dest": "/api/tasks" },
     { "src": "/api/reports", "dest": "/api/reports" },
+    { "src": "/api/schedule", "dest": "/api/schedule" },
     { "src": "/api(?:/.*)?", "status": 404 },
     { "handle": "filesystem" },
     { "src": "/.*", "dest": "/index.html", "headers": { "Cache-Control": "no-store" } }

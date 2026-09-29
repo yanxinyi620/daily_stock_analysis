@@ -226,6 +226,6 @@ export function RunnerPanel({ client, accessToken, user, onReport, reportRevisio
     {error && <p role="alert">{error}</p>}
     {historyError && <p role="alert">{historyError}</p>}
     {archiveError && <p role="alert">{archiveError}</p>}
-    {task && <p role="status">{task.status === 'succeeded' ? <>{task.task_type === 'composite_analysis' ? compositeStatusLabel(task) : '已完成'}{compositeDetail(task) && <small> · {compositeDetail(task)}</small>} {reportLink(task) || '分析完成'}</> : task.status === 'failed' ? humanError[task.error_code || ''] || '分析失败，请重试。' : `${task.progress_message || '分析处理中…'}${typeof task.progress === 'number' ? ` ${task.progress}%` : ''}`}</p>}
+    {task && <p className={`cloud-runner-task-status is-${task.status}`} role="status">{task.status === 'succeeded' ? <>{task.task_type === 'composite_analysis' ? compositeStatusLabel(task) : '已完成'}{compositeDetail(task) && <small> · {compositeDetail(task)}</small>} {reportLink(task) || '分析完成'}</> : task.status === 'failed' ? humanError[task.error_code || ''] || '分析失败，请重试。' : `${task.progress_message || '分析处理中…'}${typeof task.progress === 'number' ? ` ${task.progress}%` : ''}`}</p>}
   </section>;
 }

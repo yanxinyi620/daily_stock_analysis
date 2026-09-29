@@ -289,6 +289,28 @@
   display: grid;
   grid-template-columns: 145px minmax(0, 1fr);
 }
+.cloud-runner-task-status {
+  margin: 18px 0 0;
+  padding: 13px 16px;
+  border: 1px solid #8090a32b;
+  border-left: 3px solid #61bda7;
+  border-radius: 8px;
+  background: #61bda70a;
+  font-size: 0.85rem;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.cloud-runner-task-status small {
+  color: hsl(var(--secondary-text));
+}
+.cloud-runner-task-status a {
+  display: inline-block;
+  margin-inline-start: 8px;
+}
+.cloud-runner-task-status.is-failed {
+  border-left-color: #d99280;
+  background: #d992800a;
+}
 .cloud-records-note summary {
   cursor: pointer;
   color: #9aa7b8;
@@ -471,3 +493,16 @@
     flex-direction: column;
   }
 }
+
+.cloud-schedule-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  margin-top: 18px;
+}
+.cloud-schedule-time { margin: 0 0 6px; font-weight: 600; }
+.cloud-schedule-controls .cloud-muted { margin: 0; }
+.cloud-schedule-buttons { display: flex; flex-wrap: wrap; gap: 10px; }
+.cloud-schedule-note { margin: 18px 0 0; line-height: 1.7; font-size: 0.8rem; }

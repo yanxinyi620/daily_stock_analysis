@@ -188,3 +188,31 @@ def test_lost_progress_lease_prevents_publication_even_if_engine_swallows_callba
     runner.execute_task(task())
     publisher.publish.assert_not_called()
     assert runner.stopped.is_set()
+
+
+def test_name_worker_is_started_after_registration_and_stopped_with_runner(tmp_path):
+    runner, transport, _, _ = setup_runner(tmp_path)
+    names = Mock()
+    runner.watchlist_names = names
+    registered = []
+    def rpc(name, **_kwargs):
+        if name == 'cloud_runner_register':
+            registered.append(True)
+        if name == 'cloud_claim_execution':
+            runner.stopped.set()
+        return None
+    transport.rpc.side_effect = rpc
+    names.start_background.side_effect = lambda stopped: (
+        pytest.fail('worker started before registration') if not registered else None
+    )
+    runner.run()
+    names.start_background.assert_called_once_with(runner.stopped)
+    assert runner.stopped.is_set()
+    assert transport.rpc.call_args.args[0] == 'cloud_runner_stop'
+
+
+def test_analysis_completion_does_not_trigger_name_refresh(tmp_path):
+    runner, _, _, _ = setup_runner(tmp_path)
+    runner.watchlist_names = Mock()
+    assert runner.execute_task(task()) is True
+    runner.watchlist_names.refresh.assert_not_called()

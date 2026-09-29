@@ -84,6 +84,9 @@ WEB_SETTINGS_HIDDEN_FROM_UI = {
     "CLOUD_RUNNER_ONLINE_SECONDS",
     "CLOUD_RUNNER_CLAIM_SECONDS",
     "CLOUD_RUNNER_POLL_SECONDS",
+    # Vercel-only workflow control; never editable in local Web settings.
+    "CLOUD_ACTIONS_REPOSITORY",
+    "CLOUD_ACTIONS_TOKEN",
 
     "DATABASE_PATH",
     "SQLITE_WAL_ENABLED",

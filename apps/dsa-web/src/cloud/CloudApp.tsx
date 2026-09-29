@@ -8,6 +8,7 @@ import { ReportMarkdownBody } from '../components/report/ReportMarkdownBody';
 import { cloudData, createCloudClient, type CloudData, type CloudReport, type Market, type WatchItem } from './client';
 import { AnalysisRecords } from './AnalysisRecords';
 import { RunnerPanel } from './RunnerPanel';
+import { SchedulePanel } from './SchedulePanel';
 import { CloudDialog } from './CloudDialog';
 import './cloud.css';
 
@@ -150,6 +151,7 @@ function Workspace({ client, session, api, logout }: { client: SupabaseClient; s
     <Routes><Route path="/reports/:id" element={<ReportDetailRoute api={api} user={session.user.id} />} />
       <Route path="/" element={<div className="cloud-grid"><Watchlist api={api} user={session.user.id} /><main className="cloud-stack">
           <RunnerPanel client={client} accessToken={session.access_token} user={session.user.id} onReport={() => setRevision((n) => n + 1)} reportRevision={revision} />
+          <SchedulePanel key={session.user.id} accessToken={session.access_token} />
           <AnalysisRecords api={api} user={session.user.id} revision={revision} pageSize={pageSize} formatDate={date} onChanged={() => setRevision((n) => n + 1)} /></main></div>} />
       <Route path="*" element={<main className="cloud-panel">页面不存在。<Link to="/">返回报告列表</Link></main>} /></Routes>
     <footer className="cloud-muted">分析仅供研究参考 · 时间显示：{displayZone}</footer>

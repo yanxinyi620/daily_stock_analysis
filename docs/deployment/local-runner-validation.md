@@ -1,6 +1,6 @@
 # 本地 Runner 验收记录
 
-依据 [当前方案](vercel-supabase-plan.md) 与 [运行说明](local-runner.md)。下列 2026-09-18 记录只验收单股执行；2026-09-20 的大盘复盘与综合分析增量记录见后续章节。不是所有功能迁移完成。代码未提交或推送。
+依据 [当前方案](vercel-supabase-plan.md) 与 [运行说明](local-runner.md)。本文按日期保留历史记录，各项“尚未完成”仅描述当时状态；最新复核见文末 2026-09-27 章节及 [日报运行记录](cloud-daily-actions.md)。不是所有功能迁移完成；本轮整理仍未提交或推送代码。
 
 ## 本地已验证
 
@@ -173,3 +173,72 @@
 - 保留报告名称链接，使用链接颜色与悬停／键盘焦点下划线；操作栏移除重复「查看」，下载、删除及回收站操作保持原行为。
 - 本地云端 101 项测试与构建通过，lint 无错误（既有 MobileChatPage Hook warning）。正式部署 `dpl_6nmPF5PZdzKUfXJei8sqoRoGLVrk` 已绑定正式域名；浏览器真实登录验证名称跳转详情并返回、键盘焦点下划线、操作栏无重复链接、桌面和手机布局通过。初次脚本仅程序设置焦点不能模拟键盘模式，补实际 Tab 操作后通过。
 - 证据在仓库外 `/tmp/dsa-links-browser-production.log`、`/tmp/dsa-links-production-desktop.png`、`/tmp/dsa-links-production-mobile.png`。未重跑分析、下载或删除，功能未变且本轮仅展示与跳转验收。无数据库变更，可回滚至 `dpl_6EeXrjuwP1kHEsbfBME4SFVYuQix`；中文专题无对应英文版本。
+
+
+## 2026-09-21 任务状态间距与名称补全迁移
+
+- 任务状态增加独立轻量提示区，与提交按钮间隔 18px，长文本换行，失败状态单独配色；未修改提交、轮询和报告行为。
+- 云端 104 项测试通过；Web lint 无错误，仅既有 MobileChatPage Hook warning；本地和云端构建通过，生产依赖审计无漏洞。后端代码沿用上一轮已通过的完整 gate（5998 passed，503 subtests passed）。
+- 名称补全迁移 `202609210003_cloud_watchlist_names.sql` 已先应用恢复项目，再应用正式项目。迁移前后在同一一致性事务中比较自选股、发布任务、报告和执行记录的数据摘要，原数据不变；确认 anon/authenticated 无函数执行权限、service_role 可执行。
+- 恢复项目使用事务内临时自选股验证真实写回、原名称比较、账号隔离和删除保护，最后回滚测试数据。正式环境仅只读调用候选查询 RPC，确认可用且有 3 条待补名称；未执行正式名称写回，未重启 Runner，由用户手动重启。
+- Vercel 正式部署 `dpl_AzPokCXQUpu4xHF34SQwHQiSCJfm` 已 READY 并绑定 `https://stock.xinyilab.top`。真实登录后，模拟运行中任务状态验证桌面、手机 18px 间距和无整页横向溢出；没有提交真实分析。该模拟仅用于样式验收，不代表真实分析任务验收。
+- 证据均在仓库外：迁移记录 `/tmp/dsa-watchlist-migration-result.json`；修改前后截图 `/tmp/dsa-status-before-desktop.png`、`/tmp/dsa-status-after-desktop.png` 及对应 mobile 截图；正式截图 `/tmp/dsa-status-production-desktop.png`、`/tmp/dsa-status-production-mobile.png`，浏览器日志 `/tmp/dsa-status-production.log`。
+- 回滚界面可恢复上一版 Vercel 部署；停用补全可回退 Runner 代码。保留增量函数与既有数据，不删除自选股、报告或已补名称。本中文验收专题无英文对应页。
+
+
+## 2026-09-22 — 页面定时任务控制（本地与生产验收）
+
+- 新增主账号专用 `GET/PUT /api/schedule` 与独立控制区，复用任务接口身份校验；不改数据库、Runner 或每日工作流触发规则。
+- 新测试覆盖非主账号、失效登录、禁用成员、目标限制、错误回读、请求不确定性、重复点击、登录变化后的旧响应隔离。审查发现 Vercel API 默认拒绝规则会拦截新入口，已补充精确路由，并用回归测试检查所有现有 API 放行及未知 API 拒绝。
+- 云端测试最终 135 项通过（含部署路由回归）。本地、云端构建通过；lint 无错误，保留 MobileChatPage 原有依赖警告；npm ci 审计无漏洞。
+- 桌面 1440×900、手机 390×844 的真实浏览器检查通过，无页面水平溢出；通过模拟接口验证暂停和恢复，未触发真实分析，也未改变线上定时任务状态。
+- 截图仅保存在仓库外：`/tmp/dsa-schedule-desktop.png`、`/tmp/dsa-schedule-mobile.png`、`/tmp/dsa-schedule-paused.png`。这些是本地模拟状态证据，不代表线上 GitHub 写入验收。
+- 用户已在 Production 配置专用 `CLOUD_ACTIONS_TOKEN`，目标仓库 `CLOUD_ACTIONS_REPOSITORY` 已配置；未复制个人 CLI 凭证到托管服务。
+- 新版已发布并绑定 `https://stock.xinyilab.top`，部署 ID `dpl_G5hD56Wk4Wry4F8gY1MU6GRK9EpB`，状态 READY。首次部署副本缺少 Tailwind 配置导致构建失败，补齐已有构建配置后成功，失败部署未替换线上版本。
+- 通过真实主账号登录及页面按钮完成读取 active → 暂停 → 恢复启用，接口每次写入后均从 GitHub 回读确认；最后另用 GitHub CLI 独立核对状态为 active，与操作前一致。未手动提交分析或取消运行中的任务，未重启 Runner。
+- 生产 API 权限验证：无凭证 GET 返回 401，另一启用账号 GET/PUT 均返回 403。
+- 生产桌面和手机页面无横向溢出；截图 `/tmp/dsa-schedule-production-desktop.png`、`/tmp/dsa-schedule-production-mobile.png` 已遮盖账户信息。执行证据 `/tmp/dsa-schedule-production.log`。
+- 中文云端部署专题无对应英文版本，本次未新增英文镜像。回滚方式见 local-runner.md 的定时控制章节。
+
+## 2026-09-27 未提交改动整理与运行复核
+
+### 改动边界
+
+本轮开始于 `dev` 的 `7067c286`，原有 23 个未提交/未跟踪文件均保留，未切分支、暂存、提交或推送。现有产品改动按以下范围核对，未另外重构或扩展功能：
+
+| 范围 | 文件与契约 |
+| --- | --- |
+| 定时任务控制 | `api/schedule.ts`、`server/cloudSchedule.ts`、`server/cloudAuth.ts`、`SchedulePanel.tsx`、`CloudApp.tsx`、`vercel.json` 及测试；提取后的主账号鉴权继续用于 `cloudTasks.ts`，目标仓库仅来自服务端配置，写入后回读实际状态 |
+| 自选股名称补全 | `cloud_watchlist_names.py`、Runner 接线、`202609210003_cloud_watchlist_names.sql` 及 Python/SQL 测试；复用行情查询，限定有效账号并比较原值，不覆盖并发编辑 |
+| 状态显示 | `RunnerPanel.tsx` 和 `cloud.css`；任务状态独立展示、长文案换行，任务提交和历史报告契约保持原样 |
+| 配置与说明 | 两份 `.env.example`、`README_START.md`、运行说明及 Changelog；配置示例只列名称，无真实凭据 |
+
+本次新增的仓库修改包括本验收记录、日报验收记录、运行说明和 Changelog，以及 `src/core/config_registry.py` 的最小修复：将 `CLOUD_ACTIONS_REPOSITORY`、`CLOUD_ACTIONS_TOKEN` 登记为仅供服务端部署、不在本地设置页管理的配置，补齐 `.env.example` 的登记契约。既有覆盖测试已先复现失败，再验证修复，无新增设置入口。测试副本位于仓库外，不含真实 `.env`、应用数据库或历史报告；代码文件摘要与当前工作区一致。
+
+### 本轮重新执行的检查
+
+- `npm ci` 成功，生产及开发依赖审计未报告漏洞；云端专项 15 文件、135 项通过。
+- Web lint 无错误，保留 `MobileChatPage.tsx` 原有 Hook 依赖警告 1 条；普通构建和云端构建（含服务端 API 类型检查）均通过。
+- 改动的两个 Python 服务、两个测试文件及配置注册表均通过 `py_compile`；`git diff --check` 无空白错误。
+- 独立只读代码复核未发现指定改动中的可证实阻断问题；范围覆盖定时控制鉴权/回读、旧会话响应隔离、名称写回的权限与并发保护、配置及回滚说明。该结论不替代运行测试或生产验收。
+- 首轮全量 Web 测试默认并发下出现 5 项失败（4 项 5 秒超时、1 项等待页面状态失败），集中在未改动的 `HomePage` 和 `DecisionSignalsPage`，当时后端及构建也在运行。保留原断言和超时设置，以 `npm test -- --maxWorkers=1` 完整复跑：132 文件通过，1289 项通过、2 项跳过；没有修改前端代码或测试来绕过失败。原并发运行仍保留为失败证据。
+- 首轮后端完整 gate 为 5996 项通过、2 项失败、4 项排除、503 项子测试通过。配置示例登记失败直接对应本次新增变量，已补登记；配置与情报服务模块复测 83 项通过。另一项分页测试首轮为 `saved_count=200`、预期 300，单独运行、完整模块及全仓库收集后选中运行均通过。第二轮完整 gate 的仓库外诊断记录确认 150 个不同源各保存 2 条、合计 300 条，无失败；没有修改该模块或测试断言，也未据重跑成功宣称首轮根因已修复。
+- 修复后第二轮完整 `scripts/ci_gate.sh` 退出码 0：5998 项通过、4 项网络测试排除、503 项子测试通过，耗时约 13 分钟；语法、关键 flake8、确定性检查和离线测试全部通过。仓库外观察钩子仅记录上述分页用例结果，不跳过测试或改变断言。保留 47 条既有依赖弃用、标记及收集警告。
+- 测试日志位于 `/tmp/dsa-validation-20260927/`：`backend.log` 为首轮失败记录，`backend-final.log` 为最终完整通过记录，`web-all.log` 为首轮前端失败记录，`web-all-serial.log` 为最终通过记录，另有专项、lint、构建及分页诊断记录。本轮不使用过去的通过数量代替当前结果。
+
+### 当前运行证据
+
+- 正式网站首页 HTTP 200；匿名访问 `/api/tasks`、`/api/schedule` 均为 401 且 `Cache-Control: no-store`；`GET /api/reports` 按其方法契约返回 405，未知 API 返回 404。此次未重新登录验证主账号/B 账号，既有登录及写入验收见 9 月 22 日记录。
+- 正式自选股三条记录均有名称，仅证明当前数据完整，不据此声称本轮重新验证了后台补全写回。名称补全的真实 SQL 权限和并发保护验收保留 9 月 21 日记录。
+- 正式 `local-primary` 心跳停在 9 月 21 日，历史 PID 已不存在，本轮未启动常驻 Runner。日报工作流独立于本地 Runner，当前开关仍启用。
+- 自然多股日报、非交易日跳过及 9 月 24 日过期任务的安全收尾见 [日报运行复核](cloud-daily-actions.md#2026-09-27-自然调度复核与过期任务收尾)。只调用现有状态 RPC 收尾过期任务，没有提交新分析、消耗模型调用或修改报告、自选股。
+- 用当前实际 `RunnerPanel`、`SchedulePanel` 及样式在隔离页面运行浏览器验收：桌面 1440×900、手机 390×844，暂停后显示已暂停，恢复后显示已启用；手机页面宽度与内容宽度均为 390px，任务状态上间距 18px，长文字换行。接口及数据库响应为模拟，此证据不替代真实任务执行或生产开关写入验收。样例页仅有 favicon 404，无组件运行错误。
+- 截图 `/tmp/dsa-validation-20260927/panels-desktop.png`、`panels-mobile.png`；HTTP、数据库与摘要证据同目录，均不入库。
+
+### 未验证项、风险与回滚
+
+- 24 日分析失败的底层原因仍未知：GitHub 托管任务的私有详细日志未保留，不能声称故障已修复或分析结果已恢复。过期状态已按原规则收尾；跨市场分别执行、真实部分失败与结果恢复仍需专项验收。
+- 本轮未部署、重跑收费分析、重新启动生产 Runner，也未执行 Docker 或桌面端构建；当前产品改动不涉及其启动或打包代码。无新增迁移，本轮未重做名称补全迁移的真实环境写入测试。
+- 本轮文档修改可逐项撤回；既有功能的回滚方式沿用各功能章节，保留数据库增量结构和数据。此次已收尾的过期任务应保留真实失败终态，不回写为运行中。撤回本轮修改时不得覆盖此前未提交成果。
+- 仓库外 `/tmp/dsa-validation-20260927/this-turn.patch` 仅包含本轮 4 份文档更新与配置登记修复；需要撤回时先执行 `git apply --reverse --check /tmp/dsa-validation-20260927/this-turn.patch`，检查通过后才反向应用，保留之前的未提交修改。未来编辑可能使补丁不再适用，不能强制覆盖。
+- 本专题与日报专题没有对应英文版本，故未新增英文镜像；未修改首页 README。启动说明中的脚本、参数和文件名已与代码核对。

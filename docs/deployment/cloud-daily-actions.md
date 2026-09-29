@@ -59,3 +59,18 @@
 - 本次是周日强制验收，行情沿用可获得的数据，不代表周日存在实时交易。尚未观察下一次自然定时触发；多股、跨市场、真实部分失败和中断恢复仍不属于本次远端通过结论。
 
 证据（仓库外）：`/tmp/dsa-daily-verification.json`、`/tmp/dsa-daily-before-retry.json`、`/tmp/dsa-daily-browser.log`、`/tmp/dsa-daily-live-report.png`。本轮为平台配置/数据验收及文档更新，无新代码修改；未重复运行代码回归测试。
+
+## 2026-09-27 自然调度复核与过期任务收尾
+
+本节更新上述历史验收缺口，不表示重新执行了模型分析。本节结论仅使用显式指定 `yanxinyi620/daily_stock_analysis` 的 GitHub 查询，避免将 fork 的 CLI 默认上游结果误作本仓库证据。
+
+- 正式工作流仍为 `active`，`CLOUD_DAILY_ENABLED=true`。9 月 21～25 日均有自然 `schedule` 触发；其中 24 日失败，不能将平台运行成功一概等同于生成新日报。
+- [9 月 23 日运行](https://github.com/yanxinyi620/daily_stock_analysis/actions/runs/35876167726) 对应执行 `6ce70463-0206-42c6-bee5-7e6470d55424`，已从正式数据库核对 `outcome=completed`、3 股成功、0 股失败、大盘完成及报告 `451b3dfb-fa25-5517-a5d2-7ccf3be61745`。正文 7514 字符，可信服务端读取私有附件 HTTP 200、14171 字节，与正文 UTF-8 字节完全一致；本次未用用户会话重新验证下载权限。多股自然调度的成功路径已有真实证据。
+- [9 月 21 日运行](https://github.com/yanxinyi620/daily_stock_analysis/actions/runs/35623348126) 延迟至 UTC 16:05（北京时间次日 00:05）启动，业务按市场当前日期生成 9 月 22 日任务；22 日再次触发没有新增任务。现有实现按实际执行日去重，不能承诺每个计划日期都生成独立日报，也不能将北京时间 18:00 视为准时执行保证。
+- [9 月 25 日运行](https://github.com/yanxinyi620/daily_stock_analysis/actions/runs/36151220437) 成功但没有新增云端任务；日志仅报告 `completed or skipped`。本地使用现有交易日历确认 9 月 25 日不是 CN 交易日，结合数据库记录判断此次为跳过，不能作为失败后的分析恢复证据。
+- [9 月 24 日失败](https://github.com/yanxinyi620/daily_stock_analysis/actions/runs/36014222447) 发生于“执行股票分析”步骤，退出码 1。正式任务 `b8c90934-c46f-4057-b67c-2681188a2d2f` 停在 41%，最后心跳 UTC 14:47:02、租约 UTC 14:48:02 到期。公开日志仅提示查看私有日志；现有云端模式不上传该日志，无法据现存证据确定导致心跳停止及分析失败的底层原因。
+- 过期任务仍显示 `running` 的原因已核对：清理依赖同一 Runner 的 snapshot/register/submit 等 RPC；非交易日会在调用这些 RPC 前返回。本次通过既有 `cloud_runner_snapshot` 核对 `github-actions-daily`，使任务按既有租约规则进入 `failed / RUNNER_OFFLINE`，并清空 `current_task_id`。前后执行 ID 集合、报告 ID 集合和自选股内容一致，没有重跑、发布或删除报告。该操作只收尾状态，不恢复丢失的分析结果。
+
+证据保存在仓库外 `/tmp/dsa-validation-20260927/`：`cloud-readonly.json`、`daily-summaries.json`、`report-attachment.json`、`reconciliation.json`、`failed-job.log`、`latest-job.log`。原始日志及业务快照不入库；引用的 GitHub 运行链接可长期核查平台状态。
+
+仍未覆盖：跨市场分别执行、真实部分失败报告、失败分析结果恢复，以及 24 日底层故障定位。后续宜单独收敛脱敏故障证据的保留方案及非交易日过期状态核对，不通过自动重跑收费分析掩盖失败。此次未更改调度开关、Secrets 或生产代码；失败终态应保留，不回写成 `running`。中文专题无对应英文文档。

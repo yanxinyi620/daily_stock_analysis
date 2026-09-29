@@ -87,6 +87,7 @@ class CloudRunner:
         self.session_id = str(uuid4())
         self.stopped = threading.Event()
         self.heartbeat_thread = None
+        self.watchlist_names = None
 
     def _rpc(self, name: str, **params):
         return self.transport.rpc(name, p_runner_id=self.settings.runner_id,
@@ -185,6 +186,8 @@ class CloudRunner:
     def run(self):
         self.start()
         try:
+            if self.watchlist_names is not None:
+                self.watchlist_names.start_background(self.stopped)
             while not self.stopped.is_set():
                 task = self._rpc('cloud_claim_execution')
                 if task:
@@ -342,6 +345,9 @@ def run_cloud_runner(config) -> int:
         initialize_cloud_engine(config.cloud_runner_database_url)
         runner = CloudRunner(settings, transport, RunnerPublisher(config),
                              lambda task, progress: execute_analysis(config, task, progress, cancel_requested=runner.stopped.is_set))
+        from src.services.cloud_watchlist_names import CloudWatchlistNames
+        runner.watchlist_names = CloudWatchlistNames(config)
+        # Start only after registration; the independent name worker cannot block claims or heartbeats.
         runner.run()
         return 1 if runner.stopped.is_set() else 0
     except KeyboardInterrupt:
